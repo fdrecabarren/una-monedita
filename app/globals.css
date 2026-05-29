@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-geist);
+  --font-mono: var(--font-geist-mono);
+  --font-serif: var(--font-serif);
+
+  /* Canvas */
+  --color-canvas: #FBFBFA;
+  --color-surface: #FFFFFF;
+  --color-border: #EAEAEA;
+
+  /* Text */
+  --color-ink: #111111;
+  --color-muted: #787774;
+
+  /* Semantics */
+  --color-gasto: #9F2F2D;
+  --color-gasto-bg: #FDEBEC;
+  --color-ingreso: #346538;
+  --color-ingreso-bg: #EDF3EC;
+  --color-info: #1F6C9F;
+  --color-info-bg: #E1F3FE;
+  --color-warn: #956400;
+  --color-warn-bg: #FBF3DB;
+}
+
+/* Base */
+html {
+  color-scheme: light;
+}
+
+body {
+  background: #FBFBFA;
+  color: #111111;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Safe area padding para mobile */
+.safe-top    { padding-top:    env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-left   { padding-left:   env(safe-area-inset-left); }
+.safe-right  { padding-right:  env(safe-area-inset-right); }
+
+/* Smooth scroll */
+* { scroll-behavior: smooth; }
+
+/* Remove tap highlight on mobile */
+* { -webkit-tap-highlight-color: transparent; }
+
+/* Kbd micro-UI */
+kbd {
+  font-family: var(--font-geist-mono, monospace);
+  font-size: 0.75rem;
+  border: 1px solid #EAEAEA;
+  border-radius: 4px;
+  background: #F7F6F3;
+  padding: 2px 6px;
+  color: #111111;
+}
+
+/* Scroll entry animation helper */
+.fade-in-up {
+  animation: fadeInUp 600ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
