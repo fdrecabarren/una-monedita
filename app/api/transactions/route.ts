@@ -1,6 +1,19 @@
 import { NextResponse } from "next/server";
-import { createTransaction } from "@/lib/notion/transactions";
+import { createTransaction, getTransactionsByYear } from "@/lib/notion/transactions";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
+
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const yearParam = searchParams.get("year");
+  const year = yearParam ? parseInt(yearParam, 10) : new Date().getFullYear();
+  if (Number.isNaN(year)) {
+    return NextResponse.json({ error: "year inválido" }, { status: 400 });
+  }
+  const transactions = await getTransactionsByYear(year);
+  return NextResponse.json({ transactions });
+}
 
 const BodySchema = z.object({
   type: z.enum(["Gasto", "Ingreso"]),

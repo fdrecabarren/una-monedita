@@ -79,3 +79,18 @@ export async function updateCategory(
   });
   return pageToCategory(page as PageObjectResponse);
 }
+
+// Soft-delete: archive so existing transactions keep their relation intact.
+export async function deleteCategory(id: string): Promise<void> {
+  await updateCategory(id, { archived: true });
+}
+
+// Hard list incl. archived (used by reset/migration).
+export async function getAllCategoriesRaw(): Promise<Category[]> {
+  const res = await queryDatabase(DB_IDS.categories, {
+    sorts: [{ property: "Name", direction: "ascending" }],
+  });
+  return res.results
+    .filter((p): p is PageObjectResponse => p.object === "page" && "properties" in p)
+    .map(pageToCategory);
+}

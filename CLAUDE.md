@@ -11,24 +11,21 @@ App de finanzas personales de Franco Recabarren. Registra gastos e ingresos en N
 - Next.js 16 (App Router), TypeScript, Tailwind v4, pnpm
 - Notion como base de datos (workspace "Notion de Franco Recabarren")
 - Integración Notion: "UNA MONEDITA"
-- jose (JWT auth), zod v4, framer-motion 12, react-hook-form 7
-- @phosphor-icons/react v2 (iconos — NUNCA Lucide)
+- jose (JWT auth), zod v4
+- **lucide-react** (iconos — estilo Monefy, NO Phosphor)
 - Vercel deployment (cuenta listi-testing26)
 
-## Design system: minimalist-ui
+## Design system: Monefy/UnaMonedita (warm + verde, claro/oscuro)
 
-Reglas estrictas — NO violar:
-- Canvas `#FBFBFA`, Surface `#FFFFFF`, Border `#EAEAEA`
-- Ink `#111111`, Muted `#787774`
-- Gastos: `#9F2F2D` / `#FDEBEC`; Ingresos: `#346538` / `#EDF3EC`
-- CTA primario: `bg-[#111111] text-white rounded-[6px]`
-- Cards: `border border-[#EAEAEA] rounded-[8px]`
-- **NO** `rounded-full` en contenedores/botones grandes
-- **NO** Lucide icons — usar Phosphor (Bold/Fill)
-- **NO** emojis en markup
-- **NO** `shadow-md/lg/xl`
-- Iconos server components: `import { X } from "@phosphor-icons/react/dist/ssr"`
-- Iconos client components: `import { X } from "@phosphor-icons/react"`
+Reemplaza al viejo minimalist-ui. Definido en `app/globals.css` con CSS vars por tema.
+- App = SPA client-side estilo Monefy: 4 pantallas (Resumen donut, Movimientos, Calendario, Categorías) + Ajustes, navegación interna.
+- Fuentes: **Nunito** (`--font-app`, UI), **Fraunces** (`--font-serif`, números display `.num`), Geist Mono.
+- Acento verde `--green` (variantes teal/bosque vía `[data-accent]`). Tema claro/oscuro vía `[data-theme]` en `.app-root`.
+- Paleta categorías `--cat-*`; gastos rojo `--red`, ingresos verde `--green`.
+- Iconos: **lucide-react** vía `lib/icon-registry.ts` (registro explícito ~180 nombres, tree-shaken) + `components/app/Icon.tsx`.
+- Categorías guardan `Icon` (nombre Lucide PascalCase) + `Color` (hex) en Notion.
+- Tienda de Iconos: catálogo en `lib/icon-catalog.ts` (`GROUPS`, `COLORS`, `ALL`).
+- Preferencias (theme/dashStyle/accent) persisten en localStorage (`um.theme/um.dash/um.accent`).
 
 ## Notion — IDs y caveats críticos
 
@@ -59,42 +56,46 @@ NOTION_DB_FX_RATES=36d5c48e-39b6-8195-b489-d81b1bd2b9c8
 
 ## Estructura de páginas
 
-| Ruta | Estado |
+SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicial → client). Navegación entre pantallas es interna por store (`screen`), NO por rutas. `app/(app)/page.tsx` redirige a `/dashboard`. `/login` aparte.
+
+| Pantalla (interna) | Estado |
 |------|--------|
-| `/dashboard` | ✅ Funcional — resumen mes, recientes |
-| `/transacciones` | ✅ Funcional — lista real agrupada por fecha, edición inline |
-| `/cuentas` | Stub "Próximamente" |
-| `/presupuestos` | Stub "Próximamente" |
-| `/suscripciones` | Stub "Próximamente" |
-| `/reportes` | Stub "Próximamente" |
-| `/ajustes` | Stub "Próximamente" |
+| Resumen (donut A/B/C) | ✅ |
+| Movimientos (agrupado + edición) | ✅ |
+| Calendario (grilla + detalle día) | ✅ |
+| Categorías (CRUD + Tienda Iconos) | ✅ |
+| Ajustes (tema/acento/dashStyle/logout) | ✅ |
 
 ## API Routes
 
 | Ruta | Método | Función |
 |------|--------|---------|
-| `/api/auth` | POST | Login → setea cookie JWT |
-| `/api/auth` | DELETE | Logout → borra cookie |
-| `/api/seed` | GET | Seedea 14 categorías default si DB vacía |
+| `/api/auth` | POST/DELETE | Login / Logout (cookie JWT) |
+| `/api/seed` | GET | Seedea set diseño si vacío; `?reset=1` archiva todo + reseedea |
+| `/api/transactions` | GET | Lista por año (`?year=YYYY`, paginado) |
 | `/api/transactions` | POST | Crea transacción |
-| `/api/transactions/[id]` | PATCH | Edita transacción |
-| `/api/transactions/[id]` | DELETE | Borra transacción (`in_trash`) |
-| `/api/categories` | GET | Lista categorías (`?kind=Gasto\|Ingreso`) |
+| `/api/transactions/[id]` | PATCH/DELETE | Edita / borra (`in_trash`) |
+| `/api/categories` | GET | Lista (`?kind=Gasto\|Ingreso`) |
+| `/api/categories` | POST | Crea categoría (name, kind, icon, color) |
+| `/api/categories/[id]` | PATCH/DELETE | Edita / archiva (soft-delete) |
 
-## Categorías
+## Categorías (set Monefy actual)
 
-**Gasto:** Comida, Transporte, Entretenimiento, Salud, Ropa, Servicios, Casa, Otros  
-**Ingreso:** Sueldo, Freelance, Inversiones, Regalo, Reembolso, Otros
+**Gasto:** Comida·Utensils, Supermercado·ShoppingCart, Transporte·Car, Casa·House, Servicios·Plug, Ropa·Shirt, Ocio·Gamepad2, Salud·HeartPulse, Café·Coffee, Mascotas·PawPrint, Educación·GraduationCap, Regalos·Gift  
+**Ingreso:** Salario·Wallet, Changas·Briefcase, Ahorros·PiggyBank  
+(cada una con color hex — ver `app/api/seed/route.ts`)
 
-## Componentes clave
+## Componentes clave (`components/app/`)
 
-- `components/shell/AppShell.tsx` — layout adaptativo desktop/mobile
-- `components/shell/TransactionSheetProvider.tsx` — context para `openAdd()` / `openEdit(tx)`
-- `components/shell/Sidebar.tsx` — nav desktop
-- `components/shell/BottomNav.tsx` — nav mobile + FAB
-- `components/transaction/AddTransactionSheet.tsx` — sheet alta/edición (prop `transaction` opcional)
-- `components/transaction/TransactionList.tsx` — lista con click → openEdit
-- `lib/category-icons.tsx` — map nombre categoría → Phosphor icon (NO emojis)
+- `AppRoot.tsx` — StoreProvider + Shell, recibe initial data del server
+- `store.tsx` — context store wired a API (CRUD tx/categorías, filtro período, cache por año, theme/dashStyle/accent)
+- `Shell.tsx` — layout responsive (Sidebar desktop / BottomNav móvil), nav, ThemeToggle
+- `Icon.tsx` — `Icon` (Lucide vía registry) + `CatBubble`
+- `Donut.tsx` — donut SVG segmentado
+- `ui.tsx` — PeriodPills, MonthNav/Tabs, CenterBalance, ActionButton, Segmented, StateView
+- `screen-{dashboard,movimientos,calendario,categorias,ajustes}.tsx`
+- `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda)
+- `lib/icon-registry.ts`, `lib/icon-catalog.ts`, `lib/format.ts`
 - `lib/notion/client.ts` — `queryDatabase()` helper REST
 
 ## Reglas de desarrollo

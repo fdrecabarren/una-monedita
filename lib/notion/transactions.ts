@@ -83,6 +83,20 @@ export async function getTransactionsByMonth(year: number, month: number): Promi
   return transactions;
 }
 
+// Whole-year fetch, paginated until exhausted. Used by the SPA (client filters by period).
+export async function getTransactionsByYear(year: number): Promise<Transaction[]> {
+  const start = `${year}-01-01`;
+  const end = `${year}-12-31`;
+  const all: Transaction[] = [];
+  let cursor: string | undefined = undefined;
+  do {
+    const res = await getTransactions({ startDate: start, endDate: end, pageSize: 100, startCursor: cursor });
+    all.push(...res.transactions);
+    cursor = res.hasMore && res.nextCursor ? res.nextCursor : undefined;
+  } while (cursor);
+  return all;
+}
+
 export async function createTransaction(data: {
   type: TransactionType;
   amount: number;
