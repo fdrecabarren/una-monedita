@@ -11,7 +11,7 @@ function fmtDate(d: Date) {
 }
 
 function Row({ x, cat }: { x: UITx; cat: UICategory }) {
-  const { openEdit } = useStore();
+  const { openEdit, currency } = useStore();
   const inc = cat.type === "income";
   return (
     <button
@@ -36,7 +36,7 @@ function Row({ x, cat }: { x: UITx; cat: UICategory }) {
       </div>
       <span className="num tnum" style={{ fontSize: 14, fontWeight: 700, color: inc ? "var(--green)" : "var(--text)" }}>
         {inc ? "+ " : "− "}
-        {fmt(x.amount).replace("$ ", "$")}
+        {fmt(x.amount, currency)}
       </span>
     </button>
   );
@@ -50,6 +50,7 @@ interface Group {
 
 function GroupCard({ g }: { g: Group }) {
   const [open, setOpen] = useState(false);
+  const { currency } = useStore();
   return (
     <div style={{ background: "var(--surface)", borderRadius: 16, padding: "6px 14px", boxShadow: "var(--shadow-card)" }}>
       <button
@@ -66,7 +67,7 @@ function GroupCard({ g }: { g: Group }) {
         <div style={{ textAlign: "right" }}>
           <div className="num tnum" style={{ fontWeight: 700, fontSize: 15, color: g.cat.type === "income" ? "var(--green)" : "var(--text)" }}>
             {g.cat.type === "income" ? "+ " : "− "}
-            {fmt(g.total).replace("$ ", "$")}
+            {fmt(g.total, currency)}
           </div>
         </div>
         <Icon name={open ? "ChevronUp" : "ChevronDown"} size={18} stroke={2.2} color="var(--text-3)" />
@@ -86,7 +87,7 @@ function GroupCard({ g }: { g: Group }) {
 }
 
 export function Movimientos() {
-  const { visibleTx, byId, sim, setSim, totals } = useStore();
+  const { visibleTx, byId, sim, setSim, totals, currency } = useStore();
   if (sim === "loading") return <StateView kind="loading" />;
   if (sim === "error") return <StateView kind="error" onRetry={() => setSim("normal")} />;
   if (sim === "empty" || visibleTx.length === 0) return <StateView kind="empty" />;
@@ -109,11 +110,11 @@ export function Movimientos() {
       <div style={{ display: "flex", gap: 10, margin: "6px 2px 16px" }}>
         <div style={{ flex: 1, background: "var(--green-soft)", borderRadius: 14, padding: "12px 14px" }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--green-700)" }}>Ingresos</div>
-          <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--green-700)", marginTop: 2 }}>{fmt(totals.income)}</div>
+          <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--green-700)", marginTop: 2 }}>{fmt(totals.income, currency)}</div>
         </div>
         <div style={{ flex: 1, background: "var(--red-soft)", borderRadius: 14, padding: "12px 14px" }}>
           <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--red-600)" }}>Gastos</div>
-          <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--red-600)", marginTop: 2 }}>{fmt(totals.expense)}</div>
+          <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--red-600)", marginTop: 2 }}>{fmt(totals.expense, currency)}</div>
         </div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

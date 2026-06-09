@@ -59,7 +59,8 @@ function EntryForm({
   initialDate: string;
   edit: UITx | null;
 }) {
-  const { closeEntry, categories, addTransaction, updateTransaction, deleteTransaction } = useStore();
+  const { closeEntry, categories, addTransaction, updateTransaction, deleteTransaction, currency } = useStore();
+  const sym = currency === "EUR" ? "€" : currency === "USD" ? "US$" : "$";
   const [type, setType] = useState<TxType>(initialType);
   const [expr, setExpr] = useState(edit ? String(edit.amount) : "");
   const [catId, setCatId] = useState<string | null>(edit ? edit.cat : null);
@@ -160,7 +161,7 @@ function EntryForm({
             <div style={{ padding: "6px 22px 14px", textAlign: "right" }}>
               {hasOp && <div className="tnum" style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 700, height: 18 }}>{expr.replace(/×/g, " × ").replace(/÷/g, " ÷ ")} =</div>}
               <div className="num tnum" style={{ fontSize: 44, fontWeight: 600, color: result > 0 ? accent : "var(--text-3)", lineHeight: 1.1 }}>
-                {hasOp ? fmt(Math.round(result)) : expr === "" ? "$ 0" : "$ " + expr}
+                {hasOp ? fmt(Math.round(result), currency) : expr === "" ? sym + " 0" : sym + " " + expr}
               </div>
             </div>
 

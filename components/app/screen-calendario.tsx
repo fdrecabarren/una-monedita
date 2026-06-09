@@ -21,6 +21,7 @@ function useIsWide(bp = 760) {
 }
 
 function DayRow({ x, cat, onClick }: { x: UITx; cat: UICategory; onClick: () => void }) {
+  const { currency } = useStore();
   const inc = cat.type === "income";
   return (
     <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 2px", width: "100%", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
@@ -31,14 +32,14 @@ function DayRow({ x, cat, onClick }: { x: UITx; cat: UICategory; onClick: () => 
       </div>
       <span className="num tnum" style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", flex: "0 0 auto", color: inc ? "var(--green)" : "var(--text)" }}>
         {inc ? "+ " : "− "}
-        {fmt(x.amount).replace("$ ", "$")}
+        {fmt(x.amount, currency)}
       </span>
     </button>
   );
 }
 
 export function Calendario() {
-  const { transactions, byId, month, year, sim, setSim, openEntry, openEdit, mode } = useStore();
+  const { transactions, byId, month, year, sim, setSim, openEntry, openEdit, mode, currency } = useStore();
   const autoWide = useIsWide();
   const wide = mode ? mode === "desktop" : autoWide;
 
@@ -163,13 +164,13 @@ export function Calendario() {
             {dInc > 0 && (
               <div style={{ flex: 1, background: "var(--green-soft)", borderRadius: 12, padding: "9px 12px" }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--green-700)" }}>Ingresos</div>
-                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--green-700)" }}>{fmt(dInc)}</div>
+                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--green-700)" }}>{fmt(dInc, currency)}</div>
               </div>
             )}
             {dExp > 0 && (
               <div style={{ flex: 1, background: "var(--red-soft)", borderRadius: 12, padding: "9px 12px" }}>
                 <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--red-600)" }}>Gastos</div>
-                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--red-600)" }}>{fmt(dExp)}</div>
+                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--red-600)" }}>{fmt(dExp, currency)}</div>
               </div>
             )}
           </div>

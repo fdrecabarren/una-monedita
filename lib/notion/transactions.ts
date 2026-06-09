@@ -1,4 +1,5 @@
 import { getNotionClient, DB_IDS, queryDatabase } from "./client";
+import type { NotionCreds } from "@/lib/auth/session";
 import { TransactionSchema, type Transaction, type TransactionType, type Currency } from "./schemas";
 import { getTitle, getSelect, getNumber, getRichText, getDate, getCreatedTime, getRelationId } from "./helpers";
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
@@ -33,13 +34,11 @@ export interface GetTransactionsOptions {
   startCursor?: string;
 }
 
-export async function getTransactions(opts: GetTransactionsOptions = {}): Promise<{
+export async function getTransactions(opts: GetTransactionsOptions = {}, creds?: NotionCreds): Promise<{
   transactions: Transaction[];
   nextCursor: string | null;
   hasMore: boolean;
 }> {
-  const notion = getNotionClient();
-
   type PropertyFilter = {
     property: string;
     select?: { equals: string };
@@ -61,12 +60,16 @@ export async function getTransactions(opts: GetTransactionsOptions = {}): Promis
     filters.length === 1 ? filters[0] :
     { and: filters };
 
-  const res = await queryDatabase(DB_IDS.transactions, {
-    filter,
-    sorts: [{ property: "Date", direction: "descending" }],
-    page_size: opts.pageSize ?? 50,
-    ...(opts.startCursor ? { start_cursor: opts.startCursor } : {}),
-  });
+  const res = await queryDatabase(
+    creds?.dbIds.transactions ?? DB_IDS.transactions,
+    {
+      filter,
+      sorts: [{ property: "Date", direction: "descending" }],
+      page_size: opts.pageSize ?? 50,
+      ...(opts.startCursor ? { start_cursor: opts.startCursor } : {}),
+    },
+    creds?.token
+  );
 
   const transactions = res.results
     .filter((p): p is PageObjectResponse => p.object === "page" && "properties" in p)
@@ -75,22 +78,22 @@ export async function getTransactions(opts: GetTransactionsOptions = {}): Promis
   return { transactions, nextCursor: res.next_cursor, hasMore: res.has_more };
 }
 
-export async function getTransactionsByMonth(year: number, month: number): Promise<Transaction[]> {
+export async function getTransactionsByMonth(year: number, month: number, creds?: NotionCreds): Promise<Transaction[]> {
   const start = `${year}-${String(month).padStart(2, "0")}-01`;
   const lastDay = new Date(year, month, 0).getDate();
   const end = `${year}-${String(month).padStart(2, "0")}-${lastDay}`;
-  const { transactions } = await getTransactions({ startDate: start, endDate: end, pageSize: 100 });
+  const { transactions } = await getTransactions({ startDate: start, endDate: end, pageSize: 100 }, creds);
   return transactions;
 }
 
 // Whole-year fetch, paginated until exhausted. Used by the SPA (client filters by period).
-export async function getTransactionsByYear(year: number): Promise<Transaction[]> {
+export async function getTransactionsByYear(year: number, creds?: NotionCreds): Promise<Transaction[]> {
   const start = `${year}-01-01`;
   const end = `${year}-12-31`;
   const all: Transaction[] = [];
   let cursor: string | undefined = undefined;
   do {
-    const res = await getTransactions({ startDate: start, endDate: end, pageSize: 100, startCursor: cursor });
+    const res = await getTransactions({ startDate: start, endDate: end, pageSize: 100, startCursor: cursor }, creds);
     all.push(...res.transactions);
     cursor = res.hasMore && res.nextCursor ? res.nextCursor : undefined;
   } while (cursor);
@@ -109,12 +112,12 @@ export async function createTransaction(data: {
   categoryId?: string;
   subscriptionId?: string;
   notes?: string;
-}): Promise<Transaction> {
-  const notion = getNotionClient();
+}, creds?: NotionCreds): Promise<Transaction> {
+  const notion = getNotionClient(creds?.token);
   const label = `${data.type} · ${data.amount} ${data.currency}`;
 
   const page = await notion.pages.create({
-    parent: { database_id: DB_IDS.transactions },
+    parent: { database_id: creds?.dbIds.transactions ?? DB_IDS.transactions },
     properties: {
       Name: { title: [{ text: { content: label } }] },
       Type: { select: { name: data.type } },
@@ -146,9 +149,10 @@ export async function updateTransaction(
     accountId: string;
     categoryId: string;
     notes: string;
-  }>
+  }>,
+  creds?: NotionCreds
 ): Promise<Transaction> {
-  const notion = getNotionClient();
+  const notion = getNotionClient(creds?.token);
   const page = await notion.pages.update({
     page_id: id,
     properties: {
@@ -166,7 +170,7 @@ export async function updateTransaction(
   return pageToTransaction(page as PageObjectResponse);
 }
 
-export async function deleteTransaction(id: string): Promise<void> {
-  const notion = getNotionClient();
+export async function deleteTransaction(id: string, creds?: NotionCreds): Promise<void> {
+  const notion = getNotionClient(creds?.token);
   await notion.pages.update({ page_id: id, in_trash: true });
 }

@@ -33,7 +33,7 @@ function Ring({ size, donutSize, thickness }: { size: number; donutSize: number;
 }
 
 export function LegendList({ limit = 99, compact = false }: { limit?: number; compact?: boolean }) {
-  const { breakdown, setScreen } = useStore();
+  const { breakdown, setScreen, currency } = useStore();
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {breakdown.slice(0, limit).map((b) => (
@@ -57,7 +57,7 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, gap: 8 }}>
               <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{b.name}</span>
-              <span className="num tnum" style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{fmt(b.total)}</span>
+              <span className="num tnum" style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{fmt(b.total, currency)}</span>
             </div>
             <div style={{ height: 5, borderRadius: 999, background: "var(--bg-2)", overflow: "hidden" }}>
               <div style={{ width: b.pct * 100 + "%", height: "100%", borderRadius: 999, background: b.color }} />
@@ -71,13 +71,13 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
 }
 
 function SaldoBar() {
-  const { totals, openEntry } = useStore();
+  const { totals, openEntry, currency } = useStore();
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 26px 16px" }}>
       <ActionButton kind="expense" onClick={() => openEntry("expense")} />
       <div style={{ textAlign: "center" }}>
         <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-3)" }}>Saldo</div>
-        <div className="num" style={{ fontSize: 21, fontWeight: 600, color: "var(--text)" }}>{fmt(totals.balance)}</div>
+        <div className="num" style={{ fontSize: 21, fontWeight: 600, color: "var(--text)" }}>{fmt(totals.balance, currency)}</div>
       </div>
       <ActionButton kind="income" onClick={() => openEntry("income")} />
     </div>
@@ -85,11 +85,11 @@ function SaldoBar() {
 }
 
 export function DashboardMobile() {
-  const { dashStyle, sim, setSim, breakdown } = useStore();
+  const { dashStyle, sim, setSim, breakdown, visibleTx, currency } = useStore();
   let body;
   if (sim === "loading") body = <StateView kind="loading" />;
   else if (sim === "error") body = <StateView kind="error" onRetry={() => setSim("normal")} />;
-  else if (sim === "empty" || breakdown.length === 0) body = <StateView kind="empty" />;
+  else if (sim === "empty" || visibleTx.length === 0) body = <StateView kind="empty" />;
   else if (dashStyle === "A") {
     body = (
       <div style={{ display: "grid", placeItems: "center", height: "100%" }}>
@@ -123,7 +123,7 @@ export function DashboardMobile() {
               <CatBubble icon={b.icon} color={b.color} size={34} stroke={2} />
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</div>
-                <div className="num tnum" style={{ fontSize: 11.5, color: "var(--text-3)", fontWeight: 600 }}>{Math.round(b.pct * 100)}% · {fmtShort(b.total)}</div>
+                <div className="num tnum" style={{ fontSize: 11.5, color: "var(--text-3)", fontWeight: 600 }}>{Math.round(b.pct * 100)}% · {fmtShort(b.total, currency)}</div>
               </div>
             </div>
           ))}
@@ -139,7 +139,7 @@ export function DashboardMobile() {
         <MonthTabs />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>{body}</div>
-      {sim === "normal" && breakdown.length > 0 && (
+      {sim === "normal" && visibleTx.length > 0 && (
         <div style={{ borderTop: "1px solid var(--line)", background: "var(--surface)", flex: "0 0 auto" }}>
           <SaldoBar />
         </div>
@@ -149,11 +149,11 @@ export function DashboardMobile() {
 }
 
 export function DashboardDesktop() {
-  const { breakdown, sim, setSim } = useStore();
+  const { breakdown, sim, setSim, visibleTx } = useStore();
   let center;
   if (sim === "loading") center = <StateView kind="loading" />;
   else if (sim === "error") center = <StateView kind="error" onRetry={() => setSim("normal")} />;
-  else if (sim === "empty" || breakdown.length === 0) center = <StateView kind="empty" />;
+  else if (sim === "empty" || visibleTx.length === 0) center = <StateView kind="empty" />;
   else
     center = (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 56, flexWrap: "wrap", height: "100%" }}>

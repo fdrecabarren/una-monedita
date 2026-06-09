@@ -35,6 +35,7 @@ export type Period = "Día" | "Semana" | "Mes" | "Año";
 export type Theme = "light" | "dark";
 export type DashStyle = "A" | "B" | "C";
 export type Accent = "verde" | "teal" | "bosque";
+export type AppCurrency = "ARS" | "USD" | "EUR";
 export type Screen = "dashboard" | "movimientos" | "calendario" | "categorias" | "ajustes";
 export type Sim = "normal" | "loading" | "empty" | "error";
 
@@ -73,6 +74,8 @@ interface StoreValue {
   setDashStyle: (d: DashStyle) => void;
   accent: Accent;
   setAccent: (a: Accent) => void;
+  currency: AppCurrency;
+  setCurrency: (c: AppCurrency) => void;
   sim: Sim;
   setSim: (s: Sim) => void;
   loading: boolean;
@@ -193,6 +196,7 @@ export function StoreProvider({
   const [theme, setThemeRaw] = useState<Theme>("light");
   const [dashStyle, setDashStyleRaw] = useState<DashStyle>("A");
   const [accent, setAccentRaw] = useState<Accent>("verde");
+  const [currency, setCurrencyRaw] = useState<AppCurrency>("EUR");
   const [sim, setSim] = useState<Sim>("normal");
   const [screen, setScreen] = useState<Screen>("dashboard");
 
@@ -201,10 +205,12 @@ export function StoreProvider({
     const t = (localStorage.getItem("um.theme") as Theme) || "light";
     const d = (localStorage.getItem("um.dash") as DashStyle) || "A";
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
+    const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from localStorage on mount
     setThemeRaw(t);
     setDashStyleRaw(d);
     setAccentRaw(a);
+    setCurrencyRaw(c);
   }, []);
 
   const setTheme = useCallback((v: Theme) => {
@@ -218,6 +224,10 @@ export function StoreProvider({
   const setAccent = useCallback((v: Accent) => {
     setAccentRaw(v);
     persist("um.accent", v);
+  }, []);
+  const setCurrency = useCallback((v: AppCurrency) => {
+    setCurrencyRaw(v);
+    persist("um.currency", v);
   }, []);
 
   const [entry, setEntry] = useState<EntryState>({
@@ -362,7 +372,7 @@ export function StoreProvider({
         body: JSON.stringify({
           type: kind,
           amount,
-          currency: "ARS",
+          currency,
           date: toISO(date),
           categoryId: cat,
           notes: note || undefined,
@@ -372,7 +382,7 @@ export function StoreProvider({
       const created: Transaction = await res.json();
       upsertTx(date.getFullYear(), txToUI(created, byId));
     },
-    [byId, upsertTx]
+    [byId, upsertTx, currency]
   );
 
   const updateTransaction = useCallback<StoreValue["updateTransaction"]>(
@@ -478,6 +488,8 @@ export function StoreProvider({
     setDashStyle,
     accent,
     setAccent,
+    currency,
+    setCurrency,
     sim,
     setSim,
     loading,

@@ -2,7 +2,7 @@
 
 App de finanzas personales de Franco Recabarren. Registra gastos e ingresos en Notion desde el celular en <10s, analiza reportes en desktop.
 
-**URL producción:** https://una-monedita.vercel.app  
+**URL producción:** https://una-monedita-three.vercel.app  
 **Dev local:** `pnpm dev` → http://localhost:3000 (o 3001 si 3000 ocupado)  
 **Red local:** http://100.66.44.7:3001
 
@@ -13,7 +13,7 @@ App de finanzas personales de Franco Recabarren. Registra gastos e ingresos en N
 - Integración Notion: "UNA MONEDITA"
 - jose (JWT auth), zod v4
 - **lucide-react** (iconos — estilo Monefy, NO Phosphor)
-- Vercel deployment (cuenta listi-testing26)
+- Vercel deployment (proyecto `una-monedita`, team `franco-s-projects02`, user `francorecabarren-8052`; projectId `prj_KtMp6hZWEoPSIcVIKI1kiEZuIEsz`)
 
 ## Design system: Monefy/UnaMonedita (warm + verde, claro/oscuro)
 
@@ -97,6 +97,14 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 - `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda)
 - `lib/icon-registry.ts`, `lib/icon-catalog.ts`, `lib/format.ts`
 - `lib/notion/client.ts` — `queryDatabase()` helper REST
+
+## Vercel deployment — caveats
+
+- Alias real de producción: **una-monedita-three.vercel.app** (NO `una-monedita.vercel.app` — ese es un proyecto viejo/duplicado en otra cuenta, ignorar).
+- Para set/re-set env en Vercel: `echo 'valor' | npx vercel env add NAME production`. Usar `echo` (con newline). `printf '%s'` sin newline deja la var vacía.
+- `vercel env pull` siempre devuelve `""` para vars custom (son Sensitive) — no sirve para verificar valores. Verificar via runtime/logs de Vercel.
+- Env vars solo aplican a deploys **nuevos**. Tras cambiar vars, siempre hacer `npx vercel --prod --yes`.
+- `una-monedita.vercel.app` apunta a build antiguo (sin GET `/api/transactions`, codebase vieja). No lo tocar.
 
 ## Reglas de desarrollo
 

@@ -1,8 +1,62 @@
 "use client";
 
-import { useState } from "react";
-import { useStore, type DashStyle, type Accent } from "./store";
+import { useState, useEffect } from "react";
+import { useStore, type DashStyle, type Accent, type AppCurrency } from "./store";
 import { Icon } from "./Icon";
+
+const NOTION_TEMPLATE_URL =
+  "https://app.notion.com/p/UNA-MONEDITA-copy-3795c48e39b6803da9abf7ab40919b39?source=copy_link";
+
+function NotionSection() {
+  const [status, setStatus] = useState<{ configured: boolean; via: "jwt" | "env" | null } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then(setStatus)
+      .catch(() => setStatus({ configured: false, via: null }));
+  }, []);
+
+  const statusLabel = !status
+    ? "Comprobando..."
+    : status.via === "jwt"
+      ? "Conectado"
+      : status.via === "env"
+        ? "Conectado (servidor)"
+        : "No configurado";
+  const statusColor = status?.configured ? "var(--green-700)" : "var(--text-3)";
+
+  return (
+    <Row label="Notion" hint="Tu base de datos personal. Duplica la plantilla y conecta tu cuenta.">
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor }} />
+          <span style={{ fontWeight: 800, fontSize: 14, color: statusColor }}>{statusLabel}</span>
+        </div>
+
+        <a
+          href={NOTION_TEMPLATE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
+        >
+          <Icon name="Globe" size={16} stroke={2.2} />
+          Abrir plantilla de Notion
+        </a>
+
+        <button
+          onClick={() => {
+            window.location.href = "/setup";
+          }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1.5px solid var(--green)", background: "var(--green-soft)", color: "var(--green-700)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          <Icon name="Plug" size={16} stroke={2.2} color="var(--green-700)" />
+          {status?.via === "jwt" ? "Reconfigurar Notion" : "Conectar Notion"}
+        </button>
+      </div>
+    </Row>
+  );
+}
 
 function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -34,7 +88,7 @@ function Pills<T extends string>({ value, options, onChange }: { value: T; optio
 }
 
 export function Ajustes() {
-  const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent } = useStore();
+  const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency } = useStore();
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function logout() {
@@ -49,6 +103,10 @@ export function Ajustes() {
   return (
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 18px 28px" }}>
       <div style={{ maxWidth: 560, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <Row label="Moneda" hint="Usada al registrar nuevos movimientos">
+          <Pills value={currency} onChange={(v) => setCurrency(v as AppCurrency)} options={[{ value: "EUR", label: "€ Euro" }, { value: "ARS", label: "$ Peso" }, { value: "USD", label: "US$ Dólar" }]} />
+        </Row>
+
         <Row label="Tema">
           <Pills value={theme} onChange={setTheme} options={[{ value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]} />
         </Row>
@@ -60,6 +118,10 @@ export function Ajustes() {
         <Row label="Estilo del resumen" hint="A · anillo de iconos · B · leyenda · C · grilla compacta (móvil)">
           <Pills value={dashStyle} onChange={(v) => setDashStyle(v as DashStyle)} options={[{ value: "A", label: "A · Anillo" }, { value: "B", label: "B · Leyenda" }, { value: "C", label: "C · Grilla" }]} />
         </Row>
+
+        <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
+
+        <NotionSection />
 
         <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
 

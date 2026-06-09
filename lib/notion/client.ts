@@ -1,14 +1,19 @@
 import { Client } from "@notionhq/client";
 
-let client: Client | null = null;
+let envClient: Client | null = null;
 
-export function getNotionClient(): Client {
-  if (!client) {
-    const token = process.env.NOTION_TOKEN;
-    if (!token) throw new Error("NOTION_TOKEN no configurado en .env.local");
-    client = new Client({ auth: token });
+// When a token is provided (per-user JWT creds) build a fresh client — caching
+// across users would leak credentials. Without a token, cache the env-var client.
+export function getNotionClient(token?: string): Client {
+  if (token) {
+    return new Client({ auth: token });
   }
-  return client;
+  if (!envClient) {
+    const envToken = process.env.NOTION_TOKEN;
+    if (!envToken) throw new Error("NOTION_TOKEN no configurado en .env.local");
+    envClient = new Client({ auth: envToken });
+  }
+  return envClient;
 }
 
 // Database IDs — used as parent when creating pages AND for querying
@@ -32,9 +37,10 @@ export async function queryDatabase(
     sorts?: object[];
     page_size?: number;
     start_cursor?: string;
-  } = {}
+  } = {},
+  token?: string
 ): Promise<{ results: Array<Record<string, unknown>>; next_cursor: string | null; has_more: boolean }> {
-  const token = process.env.NOTION_TOKEN;
+  const authToken = token ?? process.env.NOTION_TOKEN;
   const body: Record<string, unknown> = {};
   if (options.filter !== undefined) body.filter = options.filter;
   if (options.sorts !== undefined) body.sorts = options.sorts;
@@ -44,7 +50,7 @@ export async function queryDatabase(
   const res = await fetch(`https://api.notion.com/v1/databases/${database_id}/query`, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${authToken}`,
       "Notion-Version": "2022-06-28",
       "Content-Type": "application/json",
     },

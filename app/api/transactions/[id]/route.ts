@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { updateTransaction, deleteTransaction } from "@/lib/notion/transactions";
+import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { z } from "zod";
 
 const PatchSchema = z.object({
@@ -15,21 +16,27 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const creds = await getNotionCredsFromRequest(request);
+  if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
+
   const { id } = await params;
   const body = await request.json();
   const parsed = PatchSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const tx = await updateTransaction(id, parsed.data);
+  const tx = await updateTransaction(id, parsed.data, creds);
   return NextResponse.json(tx);
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const creds = await getNotionCredsFromRequest(request);
+  if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
+
   const { id } = await params;
-  await deleteTransaction(id);
+  await deleteTransaction(id, creds);
   return NextResponse.json({ ok: true });
 }

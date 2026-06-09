@@ -95,17 +95,17 @@ export function MonthTabs() {
 }
 
 export function CenterBalance({ scale = 1 }: { scale?: number }) {
-  const { totals } = useStore();
+  const { totals, currency } = useStore();
   return (
     <div>
       <div style={{ fontSize: 10.5 * Math.max(scale, 0.9), fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-3)" }}>
         Balance
       </div>
       <div className="num" style={{ fontSize: 34 * scale, fontWeight: 600, lineHeight: 1.04, color: "var(--text)", marginTop: 2 }}>
-        {fmt(totals.balance)}
+        {fmt(totals.balance, currency)}
       </div>
       <div className="num tnum" style={{ fontSize: 14.5 * scale, fontWeight: 600, color: "var(--red)", marginTop: 4 }}>
-        − {fmt(totals.expense).replace("$ ", "$")}
+        − {fmt(totals.expense, currency)}
       </div>
     </div>
   );
