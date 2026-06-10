@@ -1,16 +1,70 @@
-# 🪙 Una Monedita
+# UnaMonedita
 
-App personal de finanzas conectada a Notion. Mobile-first, adaptive desktop.
+App personal de finanzas conectada a Notion. Registra gastos e ingresos en menos de 10 segundos desde el celular, analiza reportes en desktop.
+
+**Produccion:** https://una-monedita-three.vercel.app
 
 ---
 
-## Setup rápido
+## Stack
 
-### 1. Clonar y instalar
+- **Next.js 16** — App Router, Turbopack, TypeScript
+- **Tailwind v4** — diseño propio (sin componentes externos)
+- **Fonts:** Nunito (UI), Fraunces (numeros display), Geist Mono
+- **Lucide React** — iconos (~180 registrados en `lib/icon-registry.ts`)
+- **@notionhq/client v5** — Notion como base de datos (server-side)
+- **jose** — JWT auth firmado en cookie `um_session`
+- **Zod v4** — validacion de esquemas
+- **Vercel** — deployment via CLI
+
+---
+
+## Diseño
+
+SPA estilo Monefy: 5 pantallas con navegacion interna (sin cambio de ruta).
+
+| Pantalla | Descripcion |
+|----------|-------------|
+| Resumen | Donut de gastos/ingresos, balance del periodo, accesos rapidos |
+| Movimientos | Lista agrupada por dia, edicion inline, filtro por periodo |
+| Calendario | Grilla mensual con totales por dia, detalle al tocar |
+| Categorias | CRUD completo + tienda de iconos Lucide con colores |
+| Ajustes | Tema claro/oscuro, acento de color (verde/teal/bosque), logout |
+
+**Paleta:** warm cream `#f4f3ee` + verde `#2fa86a`. Tema claro/oscuro via `[data-theme]`. Acento via `[data-accent]`. Variables CSS en `app/globals.css`.
+
+**Layout responsivo:** BottomNav en mobile, sidebar fijo en desktop (>760px).
+
+---
+
+## Auth
+
+Login con password unica (`APP_PASSWORD` env var). JWT firmado en cookie `um_session` (sin expiracion). Para cambiar la sesion: logout + login con nueva password.
+
+Proxy de auth en `proxy.ts` (Next.js 16 — exportado como `proxy`, no `middleware`). Assets estaticos (PNG, SVG, webmanifest) son publicos sin auth.
+
+---
+
+## Bases de datos Notion
+
+| Base | Proposito |
+|------|-----------|
+| Transactions | Gastos e ingresos |
+| Accounts | Cuentas (no implementado en UI aun) |
+| Categories | Categorias con icono Lucide y color hex |
+| Subscriptions | Suscripciones (no implementado en UI aun) |
+| Budgets | Presupuestos (no implementado en UI aun) |
+| FxRates | Cache de cotizaciones (no implementado en UI aun) |
+
+> **Caveat @notionhq/client v5:** `databases.query` fue removido. Usar siempre `queryDatabase()` de `lib/notion/client.ts` que llama REST directo.
+
+---
+
+## Setup local
+
+### 1. Instalar dependencias
 
 ```bash
-git clone <repo-url>
-cd una-monedita
 pnpm install
 ```
 
@@ -20,108 +74,106 @@ pnpm install
 cp .env.example .env.local
 ```
 
-Editar `.env.local` con tus valores.
+Completar en `.env.local`:
 
-### 3. Crear integration en Notion
-
-1. Ir a [notion.so/my-integrations](https://www.notion.so/my-integrations)
-2. Click **+ New integration**
-3. Nombre: `una-monedita`
-4. Permisos: `Read content`, `Update content`, `Insert content`
-5. Copiar **Internal Integration Token** → `NOTION_TOKEN` en `.env.local`
-
-### 4. Crear página padre en Notion
-
-1. Crear una página en blanco en Notion llamada `Una Monedita`
-2. Conectar la integration a esa página: click `•••` → **Connections** → buscar `una-monedita`
-3. Copiar el ID de la página de la URL (la parte larga después del último `/`) → `NOTION_PARENT_PAGE_ID`
-
-### 5. Generar secretos
-
-```bash
-# AUTH_COOKIE_SECRET
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-
-# CRON_SECRET
-node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```env
+AUTH_COOKIE_SECRET=   # string aleatorio largo (node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+APP_PASSWORD=         # contrasena de login
+NOTION_TOKEN=         # internal integration token de Notion
+NOTION_PARENT_PAGE_ID=
+NOTION_DB_TRANSACTIONS=
+NOTION_DB_ACCOUNTS=
+NOTION_DB_CATEGORIES=
+NOTION_DB_SUBSCRIPTIONS=
+NOTION_DB_BUDGETS=
+NOTION_DB_FX_RATES=
 ```
 
-Pegar los valores en `.env.local`.
+### 3. Notion
 
-### 6. Crear las bases de datos en Notion
+1. Ir a [notion.so/my-integrations](https://www.notion.so/my-integrations) → crear integration `UNA MONEDITA`
+2. Permisos: Read, Insert, Update content
+3. Copiar el token → `NOTION_TOKEN`
+4. Crear una pagina raiz en Notion y conectar la integration (menu `···` → Connections)
+5. Copiar el ID de esa pagina → `NOTION_PARENT_PAGE_ID`
+6. Crear las 6 bases de datos manualmente o duplicar desde una plantilla, conectar la integration a cada una, y copiar los IDs
 
-```bash
-pnpm seed:notion
+### 4. Seed de categorias
+
+Con el servidor corriendo o desde produccion:
+
+```
+GET /api/seed          # puebla categorias si la base esta vacia
+GET /api/seed?reset=1  # archiva todo y reseedea (util para resetear)
 ```
 
-Este script crea las 6 bases de datos y actualiza automáticamente `.env.local` con los IDs.
-
-### 7. Correr en local
+### 5. Correr en local
 
 ```bash
 pnpm dev
+# → http://localhost:3000
+# En mobile (mismo WiFi): pnpm dev --hostname 0.0.0.0
 ```
 
-Abrir [http://localhost:3000](http://localhost:3000). Ingresar con `APP_PASSWORD`.
+---
 
-**Probar en mobile (mismo WiFi):**
+## Deploy
+
+Deploy directo por CLI (sin CI/CD):
 
 ```bash
-pnpm dev --hostname 0.0.0.0
+npx vercel --prod --yes
 ```
 
-Abrir `http://<tu-ip-local>:3000` desde el celular.
-
----
-
-## Deploy en Vercel
+Para actualizar variables de entorno en Vercel:
 
 ```bash
-vercel --prod
+echo 'valor' | npx vercel env add NOMBRE production
+npx vercel --prod --yes   # redeploy para que apliquen
 ```
 
-Agregar todas las variables de `.env.example` en el dashboard de Vercel → Settings → Environment Variables.
+---
 
-El cron de suscripciones (9am UTC diario) se activa automáticamente en Vercel vía `vercel.json`.
+## Estructura del proyecto
+
+```
+app/
+  (app)/dashboard/     # SPA principal (server fetch inicial → client)
+  (auth)/login/        # Login con password
+  api/                 # API routes (auth, transactions, categories, seed, me, setup)
+  globals.css          # Design system (CSS vars, tokens)
+  layout.tsx           # Fonts, metadata, PWA
+  manifest.ts          # PWA manifest (Next.js metadata route)
+  icon.png             # Favicon (Next.js auto-detecta)
+  apple-icon.png       # Apple touch icon (Next.js auto-detecta)
+
+components/app/
+  Shell.tsx            # Layout responsivo (sidebar desktop / bottomnav mobile)
+  AppRoot.tsx          # Provider + Shell, recibe initial data del server
+  store.tsx            # Estado global (transacciones, categorias, tema, pantalla)
+  Icon.tsx             # Wrapper Lucide + CatBubble
+  Donut.tsx            # Grafico donut SVG
+  screen-*.tsx         # Una por pantalla
+  modal-new-entry.tsx  # Modal de nueva transaccion (con teclado calculadora)
+  modal-icon-store.tsx # Tienda de iconos para categorias
+
+lib/
+  notion/              # client.ts, transactions.ts, categories.ts, schemas.ts
+  icon-registry.ts     # Registro explicito de ~180 iconos Lucide
+  icon-catalog.ts      # Grupos y colores para la tienda
+  format.ts            # Formateo de moneda, fechas
+
+proxy.ts               # Auth middleware (Next.js 16: exportar como `proxy`)
+public/
+  icon-192.png         # PWA manifest icon
+  icon-512.png         # PWA manifest icon
+  logo.png             # Logo usado en login y sidebar
+```
 
 ---
 
-## Bases de datos Notion
+## Categorias por defecto (seed)
 
-| Base | Propósito |
-|------|-----------|
-| `Transactions` | Ingresos, gastos y transferencias |
-| `Accounts` | Cuentas bancarias, efectivo, cripto |
-| `Categories` | Categorías con icono y color |
-| `Subscriptions` | Suscripciones recurrentes |
-| `Budgets` | Presupuestos mensuales por categoría |
-| `FxRates` | Cache de cotizaciones de monedas |
+**Gastos:** Comida, Supermercado, Transporte, Casa, Servicios, Ropa, Ocio, Salud, Cafe, Mascotas, Educacion, Regalos, Deporte, Farmacia, Viajes, Combustible, Suscripciones, Restaurant
 
----
-
-## Stack
-
-- **Next.js 16** (App Router + Server Actions)
-- **Tailwind CSS v4** (mobile-first)
-- **shadcn/ui** (Sheet mobile / Dialog desktop)
-- **Framer Motion** (animaciones)
-- **Recharts** (gráficos)
-- **@notionhq/client** (Notion API, server-side)
-- **jose** (JWT firmado para auth cookie)
-- **Zod** (validación de esquemas)
-
----
-
-## Roadmap de fases
-
-- [x] Fase 1: Bootstrap + Auth
-- [ ] Fase 2: Seed Notion + cliente tipado
-- [ ] Fase 3: Shell adaptativo + Add Transaction (mock)
-- [ ] Fase 4: Conectar a Notion
-- [ ] Fase 5: Dashboard real
-- [ ] Fase 6: Lista de transacciones
-- [ ] Fase 7: Cuentas + multi-moneda
-- [ ] Fase 8: Suscripciones
-- [ ] Fase 9: Presupuestos
-- [ ] Fase 10: Reportes
-- [ ] Fase 11: Pulido + Deploy Vercel
+**Ingresos:** Salario, Changas, Ahorros, Freelance, Inversiones, Venta

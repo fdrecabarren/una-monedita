@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CircleDollarSign } from "lucide-react";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -53,9 +52,13 @@ export default function LoginPage() {
     >
       <div style={{ width: "100%", maxWidth: 360 }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div style={{ display: "inline-flex", width: 52, height: 52, borderRadius: 15, background: "var(--green)", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "var(--shadow-fab)" }}>
-            <CircleDollarSign size={28} strokeWidth={2.4} color="#fff" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="UnaMonedita"
+            width={56}
+            height={56}
+            style={{ display: "inline-block", width: 56, height: 56, borderRadius: 15, marginBottom: 16, boxShadow: "var(--shadow-fab)", objectFit: "cover" }}
+          />
           <h1 className="num" style={{ fontSize: 28, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>UnaMonedita</h1>
           <p style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 600 }}>Finanzas personales</p>
         </div>

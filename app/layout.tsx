@@ -18,6 +18,11 @@ export const metadata: Metadata = {
   title: "UnaMonedita · Finanzas personales",
   description: "Tu app personal de finanzas conectada a Notion",
   robots: "noindex, nofollow",
+  appleWebApp: {
+    capable: true,
+    title: "UnaMonedita",
+    statusBarStyle: "default",
+  },
 };
 
 export const viewport: Viewport = {

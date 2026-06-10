@@ -21,9 +21,18 @@ const DEFAULTS: { kind: CategoryKind; name: string; icon: string; color: string 
   { kind: "Gasto", name: "Mascotas", icon: "PawPrint", color: "#9ccc65" },
   { kind: "Gasto", name: "Educación", icon: "GraduationCap", color: "#7b8cd6" },
   { kind: "Gasto", name: "Regalos", icon: "Gift", color: "#c382d6" },
+  { kind: "Gasto", name: "Deporte", icon: "Dumbbell", color: "#66bb6a" },
+  { kind: "Gasto", name: "Farmacia", icon: "Pill", color: "#ef9a9a" },
+  { kind: "Gasto", name: "Viajes", icon: "Plane", color: "#4fc3f7" },
+  { kind: "Gasto", name: "Combustible", icon: "Fuel", color: "#ffcc80" },
+  { kind: "Gasto", name: "Suscripciones", icon: "CreditCard", color: "#ce93d8" },
+  { kind: "Gasto", name: "Restaurant", icon: "UtensilsCrossed", color: "#ff8a65" },
   { kind: "Ingreso", name: "Salario", icon: "Wallet", color: "#2fa86a" },
   { kind: "Ingreso", name: "Changas", icon: "Briefcase", color: "#2fa86a" },
   { kind: "Ingreso", name: "Ahorros", icon: "PiggyBank", color: "#2fa86a" },
+  { kind: "Ingreso", name: "Freelance", icon: "Laptop", color: "#26a69a" },
+  { kind: "Ingreso", name: "Inversiones", icon: "TrendingUp", color: "#42a5f5" },
+  { kind: "Ingreso", name: "Venta", icon: "Tag", color: "#ffa726" },
 ];
 
 async function seedAll() {

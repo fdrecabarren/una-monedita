@@ -21,9 +21,13 @@ const NAV: { id: Screen; label: string; icon: string }[] = [
 function Logo({ size = 30 }: { size?: number }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-      <div style={{ width: size, height: size, borderRadius: size * 0.3, background: "var(--green)", display: "grid", placeItems: "center", flex: "0 0 auto" }}>
-        <Icon name="CircleDollarSign" size={Math.round(size * 0.62)} stroke={2.4} color="#fff" />
-      </div>
+      <img
+        src="/logo.png"
+        alt="UnaMonedita"
+        width={size}
+        height={size}
+        style={{ width: size, height: size, borderRadius: size * 0.3, flex: "0 0 auto", objectFit: "cover" }}
+      />
       <span style={{ fontWeight: 800, fontSize: size * 0.55 }}>UnaMonedita</span>
     </div>
   );
@@ -73,7 +77,7 @@ function MobileLayout() {
       <main style={{ flex: 1, minHeight: 0 }}>
         <ScreenBody screen={screen} />
       </main>
-      <nav style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--surface)", flex: "0 0 auto", paddingBottom: 4 }}>
+      <nav style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--surface)", flex: "0 0 auto", paddingBottom: "calc(4px + env(safe-area-inset-bottom))" }}>
         {NAV.map((n) => {
           const on = screen === n.id;
           return (
@@ -177,7 +181,7 @@ export function Shell() {
       className={"app-root " + (isDesktop ? "desktop" : "mobile")}
       data-theme={s.theme}
       data-accent={s.accent}
-      style={{ height: "100vh", width: "100%", overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}
+      style={{ height: "100dvh", width: "100%", overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}
     >
       <div style={{ flex: 1, minHeight: 0 }}>{isDesktop ? <DesktopLayout /> : <MobileLayout />}</div>
       <NewEntryModal />
