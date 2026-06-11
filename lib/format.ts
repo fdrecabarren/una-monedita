@@ -2,27 +2,28 @@
 
 type CurrencyCode = "ARS" | "USD" | "EUR" | string;
 
-// symbol + fractional digits per currency. Default falls back to "$" / 0 decimals.
-function currencyMeta(currency?: CurrencyCode): { symbol: string; decimals: number } {
+// symbol + fractional digits per currency. EUR/USD always show cents; ARS shows
+// them only when present (centavos are rare but must not be truncated).
+function currencyMeta(currency?: CurrencyCode): { symbol: string; minDecimals: number; maxDecimals: number } {
   switch (currency) {
     case "EUR":
-      return { symbol: "€", decimals: 2 };
+      return { symbol: "€", minDecimals: 2, maxDecimals: 2 };
     case "USD":
-      return { symbol: "US$", decimals: 2 };
+      return { symbol: "US$", minDecimals: 2, maxDecimals: 2 };
     case "ARS":
     default:
-      return { symbol: "$", decimals: 0 };
+      return { symbol: "$", minDecimals: 0, maxDecimals: 2 };
   }
 }
 
 export function fmt(n: number, currency?: CurrencyCode, opts?: { sign?: boolean }): string {
   const o = opts || {};
-  const { symbol, decimals } = currencyMeta(currency);
+  const { symbol, minDecimals, maxDecimals } = currencyMeta(currency);
   const sign = o.sign && n > 0 ? "+" : n < 0 ? "−" : "";
   const abs = Math.abs(n);
   const s = abs.toLocaleString("es-AR", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
+    minimumFractionDigits: minDecimals,
+    maximumFractionDigits: maxDecimals,
   });
   return (sign ? sign + " " : "") + symbol + " " + s;
 }

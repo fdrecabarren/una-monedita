@@ -1,27 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createSessionToken, COOKIE_NAME, MAX_AGE } from "@/lib/auth/session";
+import { checkRateLimit, clientIp } from "@/lib/auth/rate-limit";
 
-const RATE_LIMIT = new Map<string, { count: number; reset: number }>();
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000; // 15 min
 
-function checkRateLimit(ip: string): boolean {
-  const now = Date.now();
-  const entry = RATE_LIMIT.get(ip);
-  if (!entry || now > entry.reset) {
-    RATE_LIMIT.set(ip, { count: 1, reset: now + WINDOW_MS });
-    return true;
-  }
-  if (entry.count >= MAX_ATTEMPTS) return false;
-  entry.count++;
-  return true;
+// Constant-time comparison; hashing first normalizes lengths so the length
+// of the configured password never leaks through timing.
+function passwordMatches(candidate: string, expected: string): boolean {
+  const a = createHash("sha256").update(candidate).digest();
+  const b = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(a, b);
 }
 
 export async function POST(req: NextRequest) {
-  const ip =
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
-
-  if (!checkRateLimit(ip)) {
+  if (!checkRateLimit("auth:" + clientIp(req), MAX_ATTEMPTS, WINDOW_MS)) {
     return NextResponse.json(
       { error: "Demasiados intentos. Esperá 15 minutos." },
       { status: 429 }
@@ -31,7 +25,7 @@ export async function POST(req: NextRequest) {
   const { password } = await req.json().catch(() => ({ password: "" }));
   const appPassword = process.env.APP_PASSWORD;
 
-  if (!appPassword || password !== appPassword) {
+  if (!appPassword || typeof password !== "string" || !passwordMatches(password, appPassword)) {
     return NextResponse.json({ error: "Contraseña incorrecta." }, { status: 401 });
   }
 

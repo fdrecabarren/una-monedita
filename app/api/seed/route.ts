@@ -5,6 +5,7 @@ import {
   createCategory,
   updateCategory,
 } from "@/lib/notion/categories";
+import { getNotionCredsFromRequest, type NotionCreds } from "@/lib/auth/session";
 import type { CategoryKind } from "@/lib/notion/schemas";
 
 // Monefy-style design category set: Lucide icon (PascalCase) + hex color.
@@ -35,35 +36,39 @@ const DEFAULTS: { kind: CategoryKind; name: string; icon: string; color: string 
   { kind: "Ingreso", name: "Venta", icon: "Tag", color: "#ffa726" },
 ];
 
-async function seedAll() {
+async function seedAll(creds: NotionCreds) {
   for (const item of DEFAULTS) {
-    await createCategory(item);
+    await createCategory(item, creds);
   }
 }
 
 // GET: seeds the design set if DB empty.
 // GET ?reset=1: archives every existing category, then seeds the design set.
+// Requires a valid session — this endpoint can wipe every category.
 export async function GET(request: Request) {
+  const creds = await getNotionCredsFromRequest(request);
+  if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
+
   const { searchParams } = new URL(request.url);
   const reset = searchParams.get("reset") === "1";
 
   if (reset) {
-    const all = await getAllCategoriesRaw();
+    const all = await getAllCategoriesRaw(creds);
     let archived = 0;
     for (const c of all) {
       if (!c.archived) {
-        await updateCategory(c.id, { archived: true });
+        await updateCategory(c.id, { archived: true }, creds);
         archived++;
       }
     }
-    await seedAll();
+    await seedAll(creds);
     return NextResponse.json({ reset: true, archived, seeded: DEFAULTS.length });
   }
 
-  const existing = await getCategories();
+  const existing = await getCategories(undefined, creds);
   if (existing.length > 0) {
     return NextResponse.json({ seeded: false, count: existing.length });
   }
-  await seedAll();
+  await seedAll(creds);
   return NextResponse.json({ seeded: true, count: DEFAULTS.length });
 }

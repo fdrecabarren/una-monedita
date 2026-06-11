@@ -1,15 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { jwtVerify } from "jose";
+import { decryptSession, COOKIE_NAME } from "@/lib/auth/session";
 
-const COOKIE_NAME = "um_session";
-const PUBLIC_PATHS = ["/login", "/api/auth", "/api/seed"];
+const PUBLIC_PATHS = ["/login", "/api/auth"];
 // Authenticated users may reach these even without Notion creds configured.
 const SETUP_PATHS = ["/setup", "/api/setup", "/api/me"];
-
-function getSecret(): Uint8Array {
-  const secret = process.env.AUTH_COOKIE_SECRET ?? "";
-  return new TextEncoder().encode(secret);
-}
 
 function redirectToLogin(req: NextRequest, pathname: string): NextResponse {
   const loginUrl = new URL("/login", req.url);
@@ -26,23 +20,21 @@ export async function proxy(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  if (!token) {
-    return redirectToLogin(req, pathname);
+  // Fail closed: without the secret we cannot validate any session.
+  if (!process.env.AUTH_COOKIE_SECRET) {
+    return new NextResponse("Server misconfigured", { status: 503 });
   }
 
-  let payload: { auth?: boolean; notionToken?: string };
-  try {
-    const verified = await jwtVerify(token, getSecret());
-    payload = verified.payload as { auth?: boolean; notionToken?: string };
-  } catch {
+  const token = req.cookies.get(COOKIE_NAME)?.value;
+  const session = await decryptSession(token);
+  if (!session) {
     return redirectToLogin(req, pathname);
   }
 
   const onSetupPath = SETUP_PATHS.some((p) => pathname.startsWith(p));
 
-  // Configured if creds live in the JWT OR the server has env-var creds.
-  const hasCreds = !!payload.notionToken || !!process.env.NOTION_TOKEN;
+  // Configured if creds live in the session OR the server has env-var creds.
+  const hasCreds = !!session.notionToken || !!process.env.NOTION_TOKEN;
 
   // Authenticated but unconfigured → force the setup flow (except setup paths).
   if (!hasCreds && !onSetupPath) {

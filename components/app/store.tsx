@@ -7,6 +7,7 @@ import {
   useMemo,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import type { Category, Transaction } from "@/lib/notion/schemas";
@@ -79,6 +80,7 @@ interface StoreValue {
   sim: Sim;
   setSim: (s: Sim) => void;
   loading: boolean;
+  notice: string | null;
   screen: Screen;
   setScreen: (s: Screen) => void;
   entry: EntryState;
@@ -241,29 +243,44 @@ export function StoreProvider({
       setEntry({ open: true, kind: kind || "expense", date: date || null, edit: null }),
     []
   );
-  const openEdit = useCallback(
-    (tx: UITx) => setEntry({ open: true, kind: tx.type, date: tx.date, edit: tx }),
-    []
-  );
+  const openEdit = useCallback((tx: UITx) => {
+    // tx optimista aún sin id real de Notion: no se puede editar/borrar todavía
+    if (tx.id.startsWith("tmp-")) return;
+    setEntry({ open: true, kind: tx.type, date: tx.date, edit: tx });
+  }, []);
+
+  // toast de errores (se auto-limpia)
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showNotice = useCallback((msg: string) => {
+    setNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+  }, []);
   const closeEntry = useCallback(() => setEntry((e) => ({ ...e, open: false })), []);
 
   const ref = useMemo(() => new Date(year, month, 15), [year, month]);
 
   const transactions = useMemo(() => txByYear[year] || [], [txByYear, year]);
 
-  // fetch a year if not cached
+  // fetch a year if not cached (dedup de requests en vuelo)
+  const inFlightYears = useRef<Set<number>>(new Set());
   const ensureYear = useCallback(
     async (y: number) => {
-      if (txByYear[y]) return;
+      if (txByYear[y] || inFlightYears.current.has(y)) return;
+      inFlightYears.current.add(y);
       setLoading(true);
       try {
         const res = await fetch(`/api/transactions?year=${y}`);
+        if (!res.ok) throw new Error(`GET /api/transactions?year=${y} → ${res.status}`);
         const data = await res.json();
         const list: Transaction[] = data.transactions || [];
         setTxByYear((prev) => ({ ...prev, [y]: list.map((t) => txToUI(t, byId)) }));
-      } catch {
+      } catch (err) {
+        console.error(err);
         setSim("error");
       } finally {
+        inFlightYears.current.delete(y);
         setLoading(false);
       }
     },
@@ -362,11 +379,33 @@ export function StoreProvider({
     });
   }, []);
 
+  const findTx = useCallback(
+    (id: string): UITx | undefined => {
+      for (const list of Object.values(txByYear)) {
+        const found = list.find((t) => t.id === id);
+        if (found) return found;
+      }
+      return undefined;
+    },
+    [txByYear]
+  );
+
+  // mutaciones optimistas: aplican el cambio local al instante y sincronizan
+  // con Notion en background; si falla, revierten y muestran toast.
   const addTransaction = useCallback<StoreValue["addTransaction"]>(
     async ({ cat, amount, date, note }) => {
       const category = byId[cat];
       const kind = category?.type === "income" ? "Ingreso" : "Gasto";
-      const res = await fetch("/api/transactions", {
+      const tempId = "tmp-" + crypto.randomUUID();
+      upsertTx(date.getFullYear(), {
+        id: tempId,
+        cat,
+        amount,
+        date,
+        note,
+        type: category?.type ?? "expense",
+      });
+      void fetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -377,16 +416,39 @@ export function StoreProvider({
           categoryId: cat,
           notes: note || undefined,
         }),
-      });
-      if (!res.ok) throw new Error("create failed");
-      const created: Transaction = await res.json();
-      upsertTx(date.getFullYear(), txToUI(created, byId));
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`POST /api/transactions → ${res.status}`);
+          const created: Transaction = await res.json();
+          removeTx(tempId);
+          const ui = txToUI(created, byId);
+          upsertTx(ui.date.getFullYear(), ui);
+        })
+        .catch((err) => {
+          console.error(err);
+          removeTx(tempId);
+          showNotice("No se pudo guardar el movimiento");
+        });
     },
-    [byId, upsertTx, currency]
+    [byId, upsertTx, removeTx, currency, showNotice]
   );
 
   const updateTransaction = useCallback<StoreValue["updateTransaction"]>(
     async (id, patch) => {
+      const prev = findTx(id);
+      if (!prev) return;
+      const optimistic: UITx = {
+        ...prev,
+        cat: patch.cat ?? prev.cat,
+        amount: patch.amount ?? prev.amount,
+        date: patch.date ?? prev.date,
+        note: patch.note !== undefined ? patch.note : prev.note,
+        type: patch.cat ? byId[patch.cat]?.type ?? prev.type : prev.type,
+      };
+      // remove from all years then re-insert (date may have changed years)
+      removeTx(id);
+      upsertTx(optimistic.date.getFullYear(), optimistic);
+
       const body: Record<string, unknown> = {};
       if (patch.amount != null) body.amount = patch.amount;
       if (patch.note !== undefined) body.notes = patch.note;
@@ -395,28 +457,43 @@ export function StoreProvider({
         body.categoryId = patch.cat;
         body.type = byId[patch.cat]?.type === "income" ? "Ingreso" : "Gasto";
       }
-      const res = await fetch(`/api/transactions/${id}`, {
+      void fetch(`/api/transactions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
-      });
-      if (!res.ok) throw new Error("update failed");
-      const updated: Transaction = await res.json();
-      // remove from all years then re-insert (date may have changed years)
-      removeTx(id);
-      const ui = txToUI(updated, byId);
-      upsertTx(ui.date.getFullYear(), ui);
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error(`PATCH /api/transactions/${id} → ${res.status}`);
+          const updated: Transaction = await res.json();
+          removeTx(id);
+          const ui = txToUI(updated, byId);
+          upsertTx(ui.date.getFullYear(), ui);
+        })
+        .catch((err) => {
+          console.error(err);
+          removeTx(id);
+          upsertTx(prev.date.getFullYear(), prev);
+          showNotice("No se pudieron guardar los cambios");
+        });
     },
-    [byId, removeTx, upsertTx]
+    [byId, findTx, removeTx, upsertTx, showNotice]
   );
 
   const deleteTransaction = useCallback<StoreValue["deleteTransaction"]>(
     async (id) => {
-      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("delete failed");
+      const prev = findTx(id);
       removeTx(id);
+      void fetch(`/api/transactions/${id}`, { method: "DELETE" })
+        .then((res) => {
+          if (!res.ok) throw new Error(`DELETE /api/transactions/${id} → ${res.status}`);
+        })
+        .catch((err) => {
+          console.error(err);
+          if (prev) upsertTx(prev.date.getFullYear(), prev);
+          showNotice("No se pudo eliminar el movimiento");
+        });
     },
-    [removeTx]
+    [findTx, removeTx, upsertTx, showNotice]
   );
 
   const addCategory = useCallback<StoreValue["addCategory"]>(
@@ -493,6 +570,7 @@ export function StoreProvider({
     sim,
     setSim,
     loading,
+    notice,
     screen,
     setScreen,
     entry,

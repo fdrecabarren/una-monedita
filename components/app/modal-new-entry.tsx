@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, type ReactNode } from "react";
+import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { useStore, toISO, type TxType, type UITx } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Segmented } from "./ui";
@@ -67,7 +67,6 @@ function EntryForm({
   const [note, setNote] = useState(edit ? edit.note : "");
   const [date, setDate] = useState(initialDate);
   const [panel, setPanel] = useState<"pad" | "cats">("pad");
-  const [busy, setBusy] = useState(false);
 
   const cats = useMemo(() => categories.filter((c) => c.type === type), [categories, type]);
   const cat = categories.find((c) => c.id === catId);
@@ -93,34 +92,51 @@ function EntryForm({
     setExpr((e) => e.slice(0, -1));
   }
 
-  async function confirm() {
-    const amount = Math.round(result);
-    if (!amount || amount <= 0 || !catId || busy) return;
-    setBusy(true);
-    try {
-      const [y, m, d] = date.split("-").map(Number);
-      const dateObj = new Date(y, m - 1, d, 12);
-      if (edit) await updateTransaction(edit.id, { cat: catId, amount, date: dateObj, note: note.trim() });
-      else await addTransaction({ cat: catId, amount, date: dateObj, note: note.trim() });
-      closeEntry();
-    } finally {
-      setBusy(false);
-    }
+  // optimistic: el store aplica el cambio local al instante y sincroniza en
+  // background (con rollback + toast si falla), así el modal cierra sin esperar
+  function confirm() {
+    const amount = Math.round(result * 100) / 100;
+    if (!amount || amount <= 0 || !catId) return;
+    const [y, m, d] = date.split("-").map(Number);
+    const dateObj = new Date(y, m - 1, d, 12);
+    if (edit) void updateTransaction(edit.id, { cat: catId, amount, date: dateObj, note: note.trim() });
+    else void addTransaction({ cat: catId, amount, date: dateObj, note: note.trim() });
+    closeEntry();
   }
 
-  async function remove() {
-    if (!edit || busy) return;
-    setBusy(true);
-    try {
-      await deleteTransaction(edit.id);
-      closeEntry();
-    } finally {
-      setBusy(false);
-    }
+  function remove() {
+    if (!edit) return;
+    void deleteTransaction(edit.id);
+    closeEntry();
   }
+
+  // teclado físico (desktop): dígitos, operadores, Enter, Backspace, Escape.
+  // Sin array de deps a propósito: re-suscribe cada render para usar closures frescos.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeEntry();
+        return;
+      }
+      if (e.target instanceof HTMLInputElement || panel !== "pad") return;
+      if (/^[0-9]$/.test(e.key)) push(e.key);
+      else if (e.key === "." || e.key === ",") push(".");
+      else if (e.key === "+") push("+");
+      else if (e.key === "-") push("−");
+      else if (e.key === "*") push("×");
+      else if (e.key === "/") push("÷");
+      else if (e.key === "Backspace") back();
+      else if (e.key === "Enter") confirm();
+      else return;
+      e.preventDefault();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
   const accent = type === "expense" ? "var(--red)" : "var(--green)";
-  const canSave = result > 0 && !!catId && !busy;
+  const canSave = result > 0 && !!catId;
 
   return (
     <div className="um-modal-scrim" onClick={closeEntry}>
@@ -130,7 +146,7 @@ function EntryForm({
             <Segmented value={type} onChange={(v) => { setType(v); setCatId(null); }} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
           </div>
           {edit && (
-            <button className="icon-btn" onClick={remove} disabled={busy} aria-label="Eliminar" style={{ background: "var(--red-soft)" }}>
+            <button className="icon-btn" onClick={remove} aria-label="Eliminar" style={{ background: "var(--red-soft)" }}>
               <Icon name="Trash2" size={19} stroke={2} color="var(--red-600)" />
             </button>
           )}
@@ -161,7 +177,7 @@ function EntryForm({
             <div style={{ padding: "6px 22px 14px", textAlign: "right" }}>
               {hasOp && <div className="tnum" style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 700, height: 18 }}>{expr.replace(/×/g, " × ").replace(/÷/g, " ÷ ")} =</div>}
               <div className="num tnum" style={{ fontSize: 44, fontWeight: 600, color: result > 0 ? accent : "var(--text-3)", lineHeight: 1.1 }}>
-                {hasOp ? fmt(Math.round(result), currency) : expr === "" ? sym + " 0" : sym + " " + expr}
+                {hasOp ? fmt(Math.round(result * 100) / 100, currency) : expr === "" ? sym + " 0" : sym + " " + expr}
               </div>
             </div>
 
@@ -216,10 +232,10 @@ function EntryForm({
 }
 
 export function NewEntryModal() {
-  const { entry, ref } = useStore();
+  const { entry } = useStore();
   if (!entry.open) return null;
   const initialType: TxType = entry.edit ? entry.edit.type : entry.kind || "expense";
-  const initialDate = entry.edit ? toISO(entry.edit.date) : entry.date ? toISO(entry.date) : toISO(ref);
+  const initialDate = entry.edit ? toISO(entry.edit.date) : entry.date ? toISO(entry.date) : toISO(new Date());
   const formKey = entry.edit ? "edit-" + entry.edit.id : "new-" + initialType + "-" + initialDate;
   return <EntryForm key={formKey} initialType={initialType} initialDate={initialDate} edit={entry.edit} />;
 }

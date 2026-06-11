@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createTransaction, getTransactionsByYear } from "@/lib/notion/transactions";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
+import { checkMutationLimit } from "@/lib/auth/rate-limit";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ const BodySchema = z.object({
   currency: z
     .enum(["ARS", "USD", "EUR", "BTC", "ETH", "USDT"])
     .default("ARS"),
-  date: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Formato esperado: YYYY-MM-DD").optional(),
   categoryId: z.string().optional(),
   notes: z.string().max(500).optional(),
 });
@@ -33,8 +34,12 @@ const BodySchema = z.object({
 export async function POST(request: Request) {
   const creds = await getNotionCredsFromRequest(request);
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
+  if (!checkMutationLimit(request)) {
+    return NextResponse.json({ error: "Demasiadas operaciones. Esperá un minuto." }, { status: 429 });
+  }
 
-  const body = await request.json();
+  const body = await request.json().catch(() => null);
+  if (body === null) return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
