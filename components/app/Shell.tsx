@@ -7,6 +7,7 @@ import { DashboardMobile, DashboardDesktop } from "./screen-dashboard";
 import { Movimientos } from "./screen-movimientos";
 import { Calendario } from "./screen-calendario";
 import { Categorias } from "./screen-categorias";
+import { Recurrentes } from "./screen-recurrentes";
 import { Ajustes } from "./screen-ajustes";
 import { NewEntryModal } from "./modal-new-entry";
 
@@ -14,6 +15,7 @@ const NAV: { id: Screen; label: string; icon: string }[] = [
   { id: "dashboard", label: "Resumen", icon: "ChartPie" },
   { id: "movimientos", label: "Movimientos", icon: "List" },
   { id: "calendario", label: "Calendario", icon: "CalendarDays" },
+  { id: "recurrentes", label: "Fijos", icon: "Repeat" },
   { id: "categorias", label: "Categorías", icon: "Tags" },
   { id: "ajustes", label: "Ajustes", icon: "Settings" },
 ];
@@ -51,6 +53,8 @@ function ScreenBody({ screen }: { screen: Screen }) {
       return <Movimientos />;
     case "calendario":
       return <Calendario />;
+    case "recurrentes":
+      return <Recurrentes />;
     case "categorias":
       return <Categorias />;
     case "ajustes":
@@ -86,8 +90,8 @@ function MobileLayout() {
               onClick={() => setScreen(n.id)}
               style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "9px 0 7px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}
             >
-              <Icon name={n.icon} size={22} stroke={on ? 2.4 : 2} color={on ? "var(--green)" : "var(--text-3)"} />
-              <span style={{ fontSize: 10.5, fontWeight: on ? 800 : 600, color: on ? "var(--green)" : "var(--text-3)" }}>{n.label}</span>
+              <Icon name={n.icon} size={20} stroke={on ? 2.4 : 2} color={on ? "var(--green)" : "var(--text-3)"} />
+              <span style={{ fontSize: 9.5, fontWeight: on ? 800 : 600, color: on ? "var(--green)" : "var(--text-3)" }}>{n.label}</span>
             </button>
           );
         })}
@@ -142,6 +146,14 @@ function DesktopLayout() {
             <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 24px 32px" }}>
               <div className="num" style={{ fontWeight: 600, fontSize: 28, marginBottom: 12 }}>Movimientos</div>
               <Movimientos />
+            </div>
+          </div>
+        )}
+        {screen === "recurrentes" && (
+          <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
+            <div style={{ maxWidth: 720, margin: "0 auto", padding: "24px 24px 32px" }}>
+              <div className="num" style={{ fontWeight: 600, fontSize: 28, marginBottom: 16 }}>Fijos</div>
+              <Recurrentes />
             </div>
           </div>
         )}

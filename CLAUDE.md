@@ -30,7 +30,6 @@ Reemplaza al viejo minimalist-ui. Definido en `app/globals.css` con CSS vars por
 ## Notion — IDs y caveats críticos
 
 ```
-NOTION_TOKEN=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
 NOTION_PARENT_PAGE_ID=36d5c48e-39b6-8096-ada7-ddbef6dbefa8
 NOTION_DB_TRANSACTIONS=36d5c48e-39b6-8172-ba4b-c2c59fa3fe6f
 NOTION_DB_ACCOUNTS=36d5c48e-39b6-812a-864a-df660a69585e
@@ -39,6 +38,12 @@ NOTION_DB_SUBSCRIPTIONS=36d5c48e-39b6-81fd-b57c-c1d4033101e1
 NOTION_DB_BUDGETS=36d5c48e-39b6-81b5-be41-ed826914438b
 NOTION_DB_FX_RATES=36d5c48e-39b6-8195-b489-d81b1bd2b9c8
 ```
+
+`NOTION_TOKEN` NO va acá en texto plano — vive solo en `.env.local` / env vars de
+Vercel. Esquema completo de las 6 bases (props, tipos, valores válidos, ejemplos
+de payload) documentado para agentes en [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md)
+y espejado como página "📖 Guía del sistema (para agentes)" dentro de la página
+principal de Notion (publicada por `scripts/publish-notion-guide.ts`).
 
 **@notionhq/client v5 — cambio crítico:**
 - `databases.query` REMOVIDO del SDK
@@ -63,6 +68,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | Resumen (donut A/B/C) | ✅ |
 | Movimientos (agrupado + edición) | ✅ |
 | Calendario (grilla + detalle día) | ✅ |
+| Fijos / recurrentes (Por pagar / Próximos / Pausados) | ✅ |
 | Categorías (CRUD + Tienda Iconos) | ✅ |
 | Ajustes (tema/acento/dashStyle/logout) | ✅ |
 
@@ -78,6 +84,33 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | `/api/categories` | GET | Lista (`?kind=Gasto\|Ingreso`) |
 | `/api/categories` | POST | Crea categoría (name, kind, icon, color) |
 | `/api/categories/[id]` | PATCH/DELETE | Edita / archiva (soft-delete) |
+| `/api/subscriptions` | GET/POST | Lista recurrentes (`?status=`) / crea |
+| `/api/subscriptions/[id]` | PATCH/DELETE | Edita / borra (`in_trash`) |
+| `/api/subscriptions/[id]/pay` | POST | Cobra ahora: crea Transaction + avanza NextChargeDate |
+| `/api/subscriptions/migrate` | POST | Agrega a la DB Subscriptions las props que falten (idempotente) |
+| `/api/cron/subscriptions` | GET | Cron diario (`CRON_SECRET`): cobra los `AutoCreate=true` vencidos |
+| `/api/notion/guide` | POST | Publica `docs/NOTION-SCHEMA.md` como subpágina "📖 Guía del sistema" en Notion (creds de sesión) |
+| `/api/me` | GET | Estado de config Notion; `?full=1` además resuelve los 6 DB IDs + página padre |
+
+## Gastos/ingresos fijos (recurrentes)
+
+- DB Notion: `Subscriptions` (reusada, no es una hoja nueva). Frecuencias:
+  Diaria/Semanal/Mensual/Bimestral/Trimestral/Semestral/Anual/Personalizada.
+  Esquema completo → [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md#subscriptions-gastosingresos-recurrentes--fijos-en-la-app).
+- `DueDay` (1–31): día objetivo del mes; si no existe en el mes (31 en
+  febrero) se clampea al último día — nunca salta de mes. Lógica en
+  `lib/recurrence.ts`.
+- `AutoCreate` por ítem: `true` = el cron cobra solo; `false` = queda en "Por
+  pagar" hasta que el usuario toca Pagar. Cobro compartido (botón manual y
+  cron) en `lib/notion/payments.ts` `chargeSubscription()`.
+- Antes de usar la feature en una base existente: Ajustes → Mantenimiento →
+  **Preparar Notion** (llama `POST /api/subscriptions/migrate`, agrega
+  `Type`/`DueDay`/`AutoCreate`/`LastChargedDate`/`EndDate` a la DB
+  Subscriptions si faltan; idempotente).
+- La guía para agentes (Hermes) se publica/actualiza desde Ajustes →
+  Mantenimiento → **Publicar guía para agentes** (`POST /api/notion/guide`,
+  usa las creds de la sesión logueada — no requiere `NOTION_TOKEN` local).
+  Fuente: [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md).
 
 ## Categorías (set Monefy actual)
 
@@ -97,6 +130,8 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 - `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda)
 - `lib/icon-registry.ts`, `lib/icon-catalog.ts`, `lib/format.ts`
 - `lib/notion/client.ts` — `queryDatabase()` helper REST
+- `lib/notion/markdown-blocks.ts` — markdown → bloques Notion + publish helpers, usado por `scripts/publish-notion-guide.ts` y `/api/notion/guide`
+- `lib/recurrence.ts` — motor de recurrencia de gastos/ingresos fijos
 
 ## Vercel deployment — caveats
 

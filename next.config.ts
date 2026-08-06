@@ -4,6 +4,12 @@ const nextConfig: NextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
   },
+  // docs/NOTION-SCHEMA.md is read at runtime by /api/notion/guide (Ajustes →
+  // Mantenimiento → "Publicar guía") — without this it doesn't get traced
+  // into the serverless function bundle and the route 500s in production.
+  outputFileTracingIncludes: {
+    "/api/notion/guide": ["./docs/NOTION-SCHEMA.md"],
+  },
   experimental: {
     // Optimistic Server Actions feedback
     serverActions: {

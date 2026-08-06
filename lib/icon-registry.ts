@@ -39,7 +39,9 @@ import {
   // UI
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, X, Check, Delete,
   PenLine, Shapes, Moon, CloudOff, CircleDollarSign, List, Settings, LogOut, Search,
-  Circle, CalendarDays,
+  Circle, CalendarDays, Database,
+  // recurrentes
+  Repeat, CalendarClock, BellRing, PauseCircle, PlayCircle,
   type LucideIcon,
 } from "lucide-react";
 
@@ -69,7 +71,8 @@ export const ICONS: Record<string, LucideIcon> = {
   Recycle, Bell, Calendar, Clock,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, X, Check, Delete,
   PenLine, Shapes, Moon, CloudOff, CircleDollarSign, List, Settings, LogOut, Search,
-  Circle, CalendarDays,
+  Circle, CalendarDays, Database,
+  Repeat, CalendarClock, BellRing, PauseCircle, PlayCircle,
 };
 
 export const FALLBACK_ICON: LucideIcon = Tag;

@@ -58,6 +58,132 @@ function NotionSection() {
   );
 }
 
+type ActionState = { kind: "idle" } | { kind: "busy" } | { kind: "ok"; message: string } | { kind: "error"; message: string };
+
+const DB_ID_LABELS: Record<string, string> = {
+  transactions: "Transactions",
+  accounts: "Accounts",
+  categories: "Categories",
+  subscriptions: "Subscriptions",
+  budgets: "Budgets",
+  fxRates: "FX Rates",
+};
+
+function MantenimientoSection() {
+  const [migrateState, setMigrateState] = useState<ActionState>({ kind: "idle" });
+  const [guideState, setGuideState] = useState<ActionState>({ kind: "idle" });
+  const [showConn, setShowConn] = useState(false);
+  const [conn, setConn] = useState<{ dbIds: Record<string, string>; parentPageId: string | null } | null>(null);
+  const [connLoading, setConnLoading] = useState(false);
+
+  async function runMigrate() {
+    if (migrateState.kind === "busy") return;
+    setMigrateState({ kind: "busy" });
+    try {
+      const res = await fetch("/api/subscriptions/migrate", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Error");
+      const added: string[] = data.added ?? [];
+      setMigrateState({
+        kind: "ok",
+        message: added.length ? `Agregado: ${added.join(", ")}` : "Ya estaba al día",
+      });
+    } catch (err) {
+      setMigrateState({ kind: "error", message: err instanceof Error ? err.message : "Error preparando Notion" });
+    }
+  }
+
+  async function runPublishGuide() {
+    if (guideState.kind === "busy") return;
+    setGuideState({ kind: "busy" });
+    try {
+      const res = await fetch("/api/notion/guide", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error ?? "Error");
+      setGuideState({ kind: "ok", message: data.url });
+    } catch (err) {
+      setGuideState({ kind: "error", message: err instanceof Error ? err.message : "Error publicando la guía" });
+    }
+  }
+
+  async function toggleConn() {
+    const next = !showConn;
+    setShowConn(next);
+    if (next && !conn) {
+      setConnLoading(true);
+      try {
+        const res = await fetch("/api/me?full=1");
+        const data = await res.json();
+        if (data.dbIds) setConn({ dbIds: data.dbIds, parentPageId: data.parentPageId ?? null });
+      } finally {
+        setConnLoading(false);
+      }
+    }
+  }
+
+  return (
+    <Row label="Mantenimiento" hint="Preparar la base de Notion para gastos fijos y mantener la guía que lee tu agente (Hermes) al día.">
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <button
+          onClick={runMigrate}
+          disabled={migrateState.kind === "busy"}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, cursor: migrateState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+        >
+          <Icon name="Database" size={16} stroke={2.2} />
+          {migrateState.kind === "busy" ? "Preparando..." : "Preparar Notion"}
+        </button>
+        {migrateState.kind === "ok" && (
+          <div style={{ fontSize: 12, color: "var(--green-700)", fontWeight: 700 }}>{migrateState.message}</div>
+        )}
+        {migrateState.kind === "error" && (
+          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700 }}>{migrateState.message}</div>
+        )}
+
+        <button
+          onClick={runPublishGuide}
+          disabled={guideState.kind === "busy"}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, cursor: guideState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+        >
+          <Icon name="BookOpen" size={16} stroke={2.2} />
+          {guideState.kind === "busy" ? "Publicando..." : "Publicar guía para agentes"}
+        </button>
+        {guideState.kind === "ok" && (
+          <a href={guideState.message} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--green-700)", fontWeight: 700, wordBreak: "break-all" }}>
+            {guideState.message}
+          </a>
+        )}
+        {guideState.kind === "error" && (
+          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700 }}>{guideState.message}</div>
+        )}
+
+        <button
+          onClick={toggleConn}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "9px 4px", border: "none", background: "transparent", color: "var(--text-3)", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}
+        >
+          Datos de conexión
+          <Icon name={showConn ? "ChevronUp" : "ChevronDown"} size={15} stroke={2.2} />
+        </button>
+        {showConn && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 12px", borderRadius: 10, background: "var(--bg-2)", fontFamily: "var(--font-mono)", fontSize: 11 }}>
+            {connLoading && <div style={{ color: "var(--text-3)" }}>Cargando...</div>}
+            {!connLoading && conn && (
+              <>
+                <div style={{ color: "var(--text-3)" }}>Página principal: {conn.parentPageId ?? "—"}</div>
+                {Object.entries(conn.dbIds).map(([key, id]) => (
+                  <div key={key} style={{ color: "var(--text-2)" }}>
+                    {DB_ID_LABELS[key] ?? key}: {id || "—"}
+                  </div>
+                ))}
+              </>
+            )}
+            {!connLoading && !conn && <div style={{ color: "var(--text-3)" }}>No disponible</div>}
+          </div>
+        )}
+      </div>
+    </Row>
+  );
+}
+
 function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -122,6 +248,10 @@ export function Ajustes() {
         <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
 
         <NotionSection />
+
+        <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
+
+        <MantenimientoSection />
 
         <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
 

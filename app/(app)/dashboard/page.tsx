@@ -1,8 +1,9 @@
 import { cookies } from "next/headers";
 import { getTransactionsByYear } from "@/lib/notion/transactions";
 import { getCategories } from "@/lib/notion/categories";
+import { getSubscriptions } from "@/lib/notion/subscriptions";
 import { getNotionCredsFromCookieString } from "@/lib/auth/session";
-import type { Category, Transaction } from "@/lib/notion/schemas";
+import type { Category, Transaction, Subscription } from "@/lib/notion/schemas";
 import { AppRoot } from "@/components/app/AppRoot";
 
 export const dynamic = "force-dynamic";
@@ -18,8 +19,9 @@ export default async function DashboardPage() {
 
   let categories: Category[] = [];
   let transactions: Transaction[] = [];
+  let subscriptions: Subscription[] = [];
   if (creds) {
-    [categories, transactions] = await Promise.all([
+    [categories, transactions, subscriptions] = await Promise.all([
       getCategories(undefined, creds).catch((err) => {
         console.error("[dashboard] getCategories failed:", err);
         return [] as Category[];
@@ -28,8 +30,19 @@ export default async function DashboardPage() {
         console.error("[dashboard] getTransactionsByYear failed:", err);
         return [] as Transaction[];
       }),
+      getSubscriptions(undefined, creds).catch((err) => {
+        console.error("[dashboard] getSubscriptions failed:", err);
+        return [] as Subscription[];
+      }),
     ]);
   }
 
-  return <AppRoot categories={categories} transactions={transactions} year={year} />;
+  return (
+    <AppRoot
+      categories={categories}
+      transactions={transactions}
+      subscriptions={subscriptions}
+      year={year}
+    />
+  );
 }

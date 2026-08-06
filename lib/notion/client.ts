@@ -62,3 +62,64 @@ export async function queryDatabase(
   }
   return res.json();
 }
+
+// Add/update properties on a database's schema via the REST API directly —
+// same rationale as queryDatabase(): the v5 SDK's databases.update path
+// requires data-source IDs not obtainable from a plain integration token.
+// Only pass properties you want to add or change; existing ones not listed
+// are left untouched, so this is safe to call repeatedly (idempotent).
+export async function updateDatabaseSchema(
+  database_id: string,
+  properties: Record<string, unknown>,
+  token?: string
+): Promise<{ properties: Record<string, unknown> }> {
+  const authToken = token ?? process.env.NOTION_TOKEN;
+  const res = await fetch(`https://api.notion.com/v1/databases/${database_id}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+      "Notion-Version": "2022-06-28",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ properties }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Notion schema update error ${res.status}: ${JSON.stringify(err)}`);
+  }
+  return res.json();
+}
+
+// Fetch a database's current schema (property names + types) — used by the
+// migration route to decide which properties are already present.
+export async function getDatabaseSchema(
+  database_id: string,
+  token?: string
+): Promise<{ properties: Record<string, { type: string }> }> {
+  const authToken = token ?? process.env.NOTION_TOKEN;
+  const res = await fetch(`https://api.notion.com/v1/databases/${database_id}`, {
+    headers: {
+      Authorization: `Bearer ${authToken}`,
+      "Notion-Version": "2022-06-28",
+    },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Notion schema fetch error ${res.status}: ${JSON.stringify(err)}`);
+  }
+  return res.json();
+}
+
+// Resolve the parent page a database lives under — used to find where to
+// publish/refresh the "Guía del sistema (para agentes)" child page relative
+// to a user's own "Una Monedita" main page, without hardcoding its ID.
+export async function getDatabaseParentPageId(
+  database_id: string,
+  token?: string
+): Promise<string | null> {
+  const schema = await getDatabaseSchema(database_id, token);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const parent = (schema as any).parent;
+  if (parent?.type === "page_id" && typeof parent.page_id === "string") return parent.page_id;
+  return null;
+}

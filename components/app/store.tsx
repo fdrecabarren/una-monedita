@@ -10,7 +10,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { Category, Transaction } from "@/lib/notion/schemas";
+import type { Category, Transaction, Subscription, Frequency, SubscriptionStatus, Currency } from "@/lib/notion/schemas";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -32,12 +32,35 @@ export interface UITx {
   type: TxType;
 }
 
+// Recurrentes (gastos/ingresos fijos). Dates stay as YYYY-MM-DD strings —
+// unlike UITx, there's no per-month calendar filtering here, and the
+// recurrence math in lib/recurrence.ts operates on ISO strings directly.
+export interface UISub {
+  id: string;
+  name: string;
+  type: TxType;
+  amount: number;
+  currency: Currency;
+  frequency: Frequency;
+  customIntervalDays: number | null;
+  dueDay: number | null;
+  startDate: string;
+  nextChargeDate: string | null;
+  lastChargedDate: string | null;
+  endDate: string | null;
+  alertDaysBefore: number;
+  autoCreate: boolean;
+  status: SubscriptionStatus;
+  notes: string;
+  cat: string | null;
+}
+
 export type Period = "Día" | "Semana" | "Mes" | "Año";
 export type Theme = "light" | "dark";
 export type DashStyle = "A" | "B" | "C";
 export type Accent = "verde" | "teal" | "bosque";
 export type AppCurrency = "ARS" | "USD" | "EUR";
-export type Screen = "dashboard" | "movimientos" | "calendario" | "categorias" | "ajustes";
+export type Screen = "dashboard" | "movimientos" | "calendario" | "categorias" | "recurrentes" | "ajustes";
 export type Sim = "normal" | "loading" | "empty" | "error";
 
 interface EntryState {
@@ -100,6 +123,27 @@ interface StoreValue {
     patch: { name?: string; type?: TxType; icon?: string; color?: string }
   ) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+  subscriptions: UISub[];
+  addSubscription: (sub: NewSubInput) => Promise<void>;
+  updateSubscription: (id: string, patch: Partial<NewSubInput> & { status?: SubscriptionStatus }) => Promise<void>;
+  deleteSubscription: (id: string) => Promise<void>;
+  paySubscription: (id: string, opts?: { date?: string; amount?: number }) => Promise<void>;
+}
+
+export interface NewSubInput {
+  name: string;
+  type: TxType;
+  amount: number;
+  currency: Currency;
+  frequency: Frequency;
+  customIntervalDays?: number;
+  dueDay?: number;
+  startDate: string;
+  nextChargeDate?: string;
+  alertDaysBefore: number;
+  autoCreate: boolean;
+  cat: string | null;
+  notes: string;
 }
 
 const StoreCtx = createContext<StoreValue | null>(null);
@@ -141,6 +185,28 @@ function txToUI(t: Transaction, byId: Record<string, UICategory>): UITx {
   };
 }
 
+function subToUI(s: Subscription): UISub {
+  return {
+    id: s.id,
+    name: s.name,
+    type: s.type === "Ingreso" ? "income" : "expense",
+    amount: s.amount,
+    currency: s.currency ?? "ARS",
+    frequency: s.frequency ?? "Mensual",
+    customIntervalDays: s.customIntervalDays,
+    dueDay: s.dueDay,
+    startDate: s.startDate ?? toISO(new Date()),
+    nextChargeDate: s.nextChargeDate,
+    lastChargedDate: s.lastChargedDate,
+    endDate: s.endDate,
+    alertDaysBefore: s.alertDaysBefore,
+    autoCreate: s.autoCreate,
+    status: s.status ?? "Activa",
+    notes: s.notes ?? "",
+    cat: s.categoryId,
+  };
+}
+
 function startOfWeek(d: Date): Date {
   const x = new Date(d);
   const day = (x.getDay() + 6) % 7; // Mon = 0
@@ -161,17 +227,23 @@ export function StoreProvider({
   children,
   initialCategories,
   initialTransactions,
+  initialSubscriptions,
   initialYear,
   mode,
 }: {
   children: ReactNode;
   initialCategories: Category[];
   initialTransactions: Transaction[];
+  initialSubscriptions?: Subscription[];
   initialYear: number;
   mode?: "mobile" | "desktop";
 }) {
   const [categories, setCategories] = useState<UICategory[]>(() =>
     initialCategories.map(catToUI)
+  );
+
+  const [subscriptions, setSubscriptions] = useState<UISub[]>(() =>
+    (initialSubscriptions ?? []).map(subToUI)
   );
 
   const byId = useMemo(
@@ -546,6 +618,92 @@ export function StoreProvider({
     []
   );
 
+  // ---- subscriptions (recurrentes) mutations ----
+  const addSubscription = useCallback<StoreValue["addSubscription"]>(
+    async (input) => {
+      const res = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: input.name,
+          type: input.type === "income" ? "Ingreso" : "Gasto",
+          amount: input.amount,
+          currency: input.currency,
+          frequency: input.frequency,
+          customIntervalDays: input.customIntervalDays,
+          dueDay: input.dueDay,
+          startDate: input.startDate,
+          nextChargeDate: input.nextChargeDate,
+          alertDaysBefore: input.alertDaysBefore,
+          autoCreate: input.autoCreate,
+          categoryId: input.cat ?? undefined,
+          notes: input.notes || undefined,
+        }),
+      });
+      if (!res.ok) throw new Error("create subscription failed");
+      const created: Subscription = await res.json();
+      setSubscriptions((list) => [...list, subToUI(created)]);
+    },
+    []
+  );
+
+  const updateSubscriptionFn = useCallback<StoreValue["updateSubscription"]>(
+    async (id, patch) => {
+      const body: Record<string, unknown> = {};
+      if (patch.name != null) body.name = patch.name;
+      if (patch.type) body.type = patch.type === "income" ? "Ingreso" : "Gasto";
+      if (patch.amount != null) body.amount = patch.amount;
+      if (patch.currency) body.currency = patch.currency;
+      if (patch.frequency) body.frequency = patch.frequency;
+      if (patch.customIntervalDays != null) body.customIntervalDays = patch.customIntervalDays;
+      if (patch.dueDay != null) body.dueDay = patch.dueDay;
+      if (patch.startDate) body.startDate = patch.startDate;
+      if (patch.nextChargeDate) body.nextChargeDate = patch.nextChargeDate;
+      if (patch.alertDaysBefore != null) body.alertDaysBefore = patch.alertDaysBefore;
+      if (patch.autoCreate != null) body.autoCreate = patch.autoCreate;
+      if (patch.status) body.status = patch.status;
+      if (patch.cat !== undefined) body.categoryId = patch.cat ?? undefined;
+      if (patch.notes !== undefined) body.notes = patch.notes;
+      const res = await fetch(`/api/subscriptions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error("update subscription failed");
+      const updated: Subscription = await res.json();
+      setSubscriptions((list) => list.map((s) => (s.id === id ? subToUI(updated) : s)));
+    },
+    []
+  );
+
+  const deleteSubscriptionFn = useCallback<StoreValue["deleteSubscription"]>(
+    async (id) => {
+      const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("delete subscription failed");
+      setSubscriptions((list) => list.filter((s) => s.id !== id));
+    },
+    []
+  );
+
+  // pays now (or on a given date/amount): creates the transaction server-side
+  // and folds both the updated subscription and the new tx into local state,
+  // so Movimientos/Resumen reflect it without a refetch.
+  const paySubscription = useCallback<StoreValue["paySubscription"]>(
+    async (id, opts) => {
+      const res = await fetch(`/api/subscriptions/${id}/pay`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(opts ?? {}),
+      });
+      if (!res.ok) throw new Error("pay subscription failed");
+      const { subscription, transaction }: { subscription: Subscription; transaction: Transaction } = await res.json();
+      setSubscriptions((list) => list.map((s) => (s.id === id ? subToUI(subscription) : s)));
+      const ui = txToUI(transaction, byId);
+      upsertTx(ui.date.getFullYear(), ui);
+    },
+    [byId, upsertTx]
+  );
+
   const value: StoreValue = {
     categories,
     byId,
@@ -584,6 +742,11 @@ export function StoreProvider({
     addCategory,
     updateCategory,
     deleteCategory,
+    subscriptions,
+    addSubscription,
+    updateSubscription: updateSubscriptionFn,
+    deleteSubscription: deleteSubscriptionFn,
+    paySubscription,
   };
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;

@@ -83,7 +83,9 @@ export async function verifySessionToken(token: string): Promise<boolean> {
 }
 
 // Build NotionCreds from env vars. Returns null if not configured.
-function credsFromEnv(): NotionCreds | null {
+// Exported as getCredsFromEnv() for callers with no session cookie to read
+// (e.g. the Vercel cron route, authenticated by CRON_SECRET instead).
+export function credsFromEnv(): NotionCreds | null {
   const token = process.env.NOTION_TOKEN;
   const transactions = process.env.NOTION_DB_TRANSACTIONS;
   if (!token || !transactions) return null;
