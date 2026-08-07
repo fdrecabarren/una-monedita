@@ -58,6 +58,15 @@ export function Calendario() {
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
+  const rows = Math.ceil((firstWeekday + daysInMonth) / 7);
+
+  // Tamaño de celda calculado para que la grilla completa entre en pantalla sin scroll.
+  // `reserved` = alto de cabecera, nav inferior, MonthNav, fila de días y espacio mínimo del detalle.
+  const gap = 6;
+  const reserved = wide ? 132 : 357;
+  const cellMax = wide ? 96 : 40;
+  const cell = `max(26px, min((100dvh - ${reserved + (rows - 1) * gap}px - env(safe-area-inset-bottom)) / ${rows}, ${cellMax}px))`;
+  const gridMaxWidth = `calc(${cell} * 7 + ${gap * 6}px)`;
 
   const monthKey = `${year}-${month}`;
   const firstWithTx = useMemo(
@@ -94,7 +103,7 @@ export function Calendario() {
         style={{
           position: "relative",
           aspectRatio: "1 / 1",
-          borderRadius: 13,
+          borderRadius: wide ? 13 : 11,
           cursor: "pointer",
           fontFamily: "inherit",
           border: isToday && !on ? "1.5px solid var(--green)" : "1.5px solid transparent",
@@ -105,15 +114,16 @@ export function Calendario() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          gap: 3,
+          gap: wide ? 3 : 2,
           fontWeight: txs.length ? 800 : 600,
-          fontSize: 14.5,
+          fontSize: wide ? 14.5 : 13,
+          lineHeight: 1.1,
         }}
       >
         <span>{d}</span>
-        <span style={{ display: "flex", gap: 3, height: 5, alignItems: "center" }}>
+        <span style={{ display: "flex", gap: wide ? 3 : 2.5, height: wide ? 5 : 4, alignItems: "center" }}>
           {colors.map((c, i) => (
-            <span key={i} style={{ width: 5, height: 5, borderRadius: 999, background: on ? "rgba(255,255,255,.92)" : c }} />
+            <span key={i} style={{ width: wide ? 5 : 4, height: wide ? 5 : 4, borderRadius: 999, background: on ? "rgba(255,255,255,.92)" : c }} />
           ))}
         </span>
       </button>
@@ -121,13 +131,13 @@ export function Calendario() {
   }
 
   const grid = (
-    <div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6, marginBottom: 6 }}>
+    <div style={{ width: "100%", maxWidth: gridMaxWidth, margin: "0 auto" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap, marginBottom: wide ? 6 : 5 }}>
         {WEEKDAYS.map((w) => (
-          <div key={w} style={{ textAlign: "center", fontSize: 11, fontWeight: 800, letterSpacing: ".03em", color: "var(--text-3)", textTransform: "uppercase" }}>{w}</div>
+          <div key={w} style={{ textAlign: "center", fontSize: wide ? 11 : 10, fontWeight: 800, letterSpacing: ".03em", color: "var(--text-3)", textTransform: "uppercase" }}>{w}</div>
         ))}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 6 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap }}>
         {Array.from({ length: firstWeekday }).map((_, i) => (
           <div key={"b" + i} />
         ))}
@@ -217,11 +227,11 @@ export function Calendario() {
   }
 
   return (
-    <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "6px 16px 24px" }}>
-      <div style={{ display: "flex", justifyContent: "center", margin: "4px 0 14px" }}><MonthNav /></div>
-      {grid}
-      <div style={{ height: 1, background: "var(--line)", margin: "20px 0 16px" }} />
-      {detail}
+    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", padding: "4px 14px 0" }}>
+      <div style={{ display: "flex", justifyContent: "center", margin: "2px 0 8px", flex: "0 0 auto" }}><MonthNav /></div>
+      <div style={{ flex: "0 0 auto" }}>{grid}</div>
+      <div style={{ height: 1, background: "var(--line)", margin: "12px 0 10px", flex: "0 0 auto" }} />
+      <div className="app-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 12 }}>{detail}</div>
     </div>
   );
 }

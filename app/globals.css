@@ -128,6 +128,14 @@ body {
   letter-spacing: 0;
 }
 
+/* iOS Safari hace zoom automático al enfocar inputs con fuente < 16px.
+   Red de contención — los estilos inline ya corregidos siguen ganando. */
+.app-root input,
+.app-root textarea,
+.app-root select {
+  font-size: 16px;
+}
+
 .num {
   font-family: var(--font-serif), ui-serif, Georgia, serif;
   font-variant-numeric: tabular-nums;
@@ -225,6 +233,8 @@ body {
   background: rgba(20, 18, 16, 0.42);
   padding: 0;
   animation: scrimIn 0.18s ease both;
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 @keyframes scrimIn {
   from {
@@ -236,10 +246,16 @@ body {
 }
 .um-sheet {
   width: 100%;
+  max-width: 100%;
   background: var(--surface);
   border-radius: 22px 22px 0 0;
   box-shadow: var(--shadow-modal);
   animation: sheetIn 0.26s cubic-bezier(0.2, 0, 0.2, 1) both;
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.um-sheet .app-scroll {
+  touch-action: pan-y;
 }
 @keyframes sheetIn {
   from {

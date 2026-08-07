@@ -9,7 +9,7 @@ import { IconStoreModal } from "./modal-icon-store";
 type EditTarget = UICategory | { type: TxType } | null;
 
 function CategoryEditor({ initial, onClose }: { initial: NonNullable<EditTarget>; onClose: () => void }) {
-  const { addCategory, updateCategory, deleteCategory } = useStore();
+  const { addCategory, updateCategory, deleteCategory, budgets, setBudget, currency: appCurrency } = useStore();
   const existing = "id" in initial ? initial : null;
   const isNew = !existing;
   const [name, setName] = useState(existing?.name || "");
@@ -19,13 +19,25 @@ function CategoryEditor({ initial, onClose }: { initial: NonNullable<EditTarget>
   const [storeOpen, setStoreOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const existingBudget = existing ? budgets.find((b) => b.categoryId === existing.id) : undefined;
+  const [budgetLimit, setBudgetLimit] = useState(existingBudget ? String(existingBudget.limit) : "");
+
   async function save() {
     if (busy) return;
     setBusy(true);
     try {
       const payload = { name: name.trim() || "Sin nombre", type, icon, color };
-      if (existing) await updateCategory(existing.id, payload);
-      else await addCategory(payload);
+      let catId: string;
+      if (existing) {
+        await updateCategory(existing.id, payload);
+        catId = existing.id;
+      } else {
+        catId = await addCategory(payload);
+      }
+      if (type === "expense") {
+        const lim = Math.round((parseFloat(budgetLimit) || 0) * 100) / 100;
+        if (lim > 0) await setBudget(catId, lim);
+      }
       onClose();
     } finally {
       setBusy(false);
@@ -85,6 +97,27 @@ function CategoryEditor({ initial, onClose }: { initial: NonNullable<EditTarget>
             <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 8 }}>Tipo</div>
             <Segmented value={type} onChange={setType} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
           </div>
+
+          {type === "expense" && (
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 8 }}>
+                Presupuesto mensual (opcional)
+              </div>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={budgetLimit}
+                onChange={(e) => setBudgetLimit(e.target.value)}
+                placeholder={`Sin límite (${appCurrency})`}
+                style={{ width: "100%", border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", outline: "none" }}
+              />
+              <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 6, lineHeight: 1.4 }}>
+                Se compara contra el gasto real del mes en el Resumen.
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             {existing && (

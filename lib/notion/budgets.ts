@@ -1,4 +1,5 @@
 import { getNotionClient, DB_IDS, queryDatabase } from "./client";
+import type { NotionCreds } from "@/lib/auth/session";
 import { BudgetSchema, type Budget } from "./schemas";
 import { getTitle, getSelect, getNumber, getDate, getCheckbox, getRelationId } from "./helpers";
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
@@ -17,13 +18,14 @@ function pageToBudget(page: PageObjectResponse): Budget {
   });
 }
 
-export async function getBudgetsByMonth(year: number, month: number): Promise<Budget[]> {
-  const notion = getNotionClient();
+export async function getBudgetsByMonth(year: number, month: number, creds?: NotionCreds): Promise<Budget[]> {
   const monthStr = `${year}-${String(month).padStart(2, "0")}-01`;
 
-  const res = await queryDatabase(DB_IDS.budgets, {
-    filter: { property: "Month", date: { equals: monthStr } },
-  });
+  const res = await queryDatabase(
+    creds?.dbIds.budgets ?? DB_IDS.budgets,
+    { filter: { property: "Month", date: { equals: monthStr } } },
+    creds?.token
+  );
 
   return res.results
     .filter((p): p is PageObjectResponse => p.object === "page" && "properties" in p)
@@ -38,10 +40,10 @@ export async function createBudget(data: {
   recurring?: boolean;
   alertAt80?: boolean;
   categoryId?: string;
-}): Promise<Budget> {
-  const notion = getNotionClient();
+}, creds?: NotionCreds): Promise<Budget> {
+  const notion = getNotionClient(creds?.token);
   const page = await notion.pages.create({
-    parent: { database_id: DB_IDS.budgets },
+    parent: { database_id: creds?.dbIds.budgets ?? DB_IDS.budgets },
     properties: {
       Name: { title: [{ text: { content: data.name } }] },
       Limit: { number: data.limit },
@@ -57,9 +59,10 @@ export async function createBudget(data: {
 
 export async function updateBudget(
   id: string,
-  data: Partial<{ limit: number; recurring: boolean; alertAt80: boolean }>
+  data: Partial<{ limit: number; recurring: boolean; alertAt80: boolean }>,
+  creds?: NotionCreds
 ): Promise<Budget> {
-  const notion = getNotionClient();
+  const notion = getNotionClient(creds?.token);
   const page = await notion.pages.update({
     page_id: id,
     properties: {

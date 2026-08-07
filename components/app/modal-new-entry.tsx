@@ -140,7 +140,7 @@ function EntryForm({
 
   return (
     <div className="um-modal-scrim" onClick={closeEntry}>
-      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, display: "flex", flexDirection: "column", maxHeight: "94vh" }}>
+      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, display: "flex", flexDirection: "column", maxHeight: "94dvh" }}>
         <div style={{ padding: "14px 18px 10px", display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
           <div style={{ flex: 1 }}>
             <Segmented value={type} onChange={(v) => { setType(v); setCatId(null); }} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
@@ -199,11 +199,11 @@ function EntryForm({
               <div style={{ display: "flex", gap: 10 }}>
                 <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
                   <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
-                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--text)" }} />
+                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)", cursor: "pointer" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)", cursor: "pointer", minWidth: 0, flex: "0 1 auto" }}>
                   <Icon name="Calendar" size={17} stroke={2} color="var(--text-3)" />
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 13.5, fontWeight: 700, color: "var(--text)" }} />
+                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", minWidth: 0 }} />
                 </label>
               </div>
             </div>

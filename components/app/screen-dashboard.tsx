@@ -1,10 +1,13 @@
 "use client";
 
+import { useMemo } from "react";
 import { useStore } from "./store";
-import { CatBubble } from "./Icon";
+import { CatBubble, Icon } from "./Icon";
 import { Donut } from "./Donut";
-import { PeriodPills, MonthTabs, MonthNav, CenterBalance, ActionButton, StateView } from "./ui";
+import { TrendBars } from "./TrendBars";
+import { PeriodPills, RangeNav, CenterBalance, ActionButton, StateView } from "./ui";
 import { fmt, fmtShort } from "@/lib/format";
+import { bucketsFor, daysBetween, endOfMonth, rangeLabel as formatRangeLabel } from "@/lib/date-range";
 
 function Ring({ size, donutSize, thickness }: { size: number; donutSize: number; thickness: number }) {
   const { breakdown } = useStore();
@@ -32,40 +35,131 @@ function Ring({ size, donutSize, thickness }: { size: number; donutSize: number;
   );
 }
 
+// Presupuestos son mensuales por definición del schema de Notion — solo tiene
+// sentido mostrarlos contra el gasto real cuando el rango elegido es,
+// justamente, un mes completo (period "Mes", o un rango custom que coincide).
+function isFullMonthRange(range: { start: Date; end: Date }): boolean {
+  return range.start.getDate() === 1 && range.end.getTime() === endOfMonth(range.start).getTime();
+}
+
 export function LegendList({ limit = 99, compact = false }: { limit?: number; compact?: boolean }) {
-  const { breakdown, setScreen, currency } = useStore();
+  const { breakdown, setScreen, currency, budgets, range } = useStore();
+  const showBudgets = isFullMonthRange(range);
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
-      {breakdown.slice(0, limit).map((b) => (
-        <button
-          key={b.cat}
-          onClick={() => setScreen("movimientos")}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-            padding: compact ? "7px 6px" : "10px 6px",
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            fontFamily: "inherit",
-            textAlign: "left",
-            width: "100%",
-          }}
-        >
-          <CatBubble icon={b.icon} color={b.color} size={compact ? 34 : 40} stroke={2} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, gap: 8 }}>
-              <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{b.name}</span>
-              <span className="num tnum" style={{ fontWeight: 600, fontSize: 14, color: "var(--text)" }}>{fmt(b.total, currency)}</span>
+      {breakdown.slice(0, limit).map((b) => {
+        const budget = showBudgets ? budgets.find((bd) => bd.categoryId === b.cat) : undefined;
+        const budgetPct = budget && budget.limit > 0 ? Math.min(b.total / budget.limit, 1) : null;
+        const over = budgetPct !== null && b.total > budget!.limit;
+        const near = budgetPct !== null && budget!.alertAt80 && budgetPct >= 0.8;
+        const barColor = over ? "var(--red)" : near ? "var(--cat-fun)" : b.color;
+        return (
+          <button
+            key={b.cat}
+            onClick={() => setScreen("movimientos")}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              padding: compact ? "7px 6px" : "10px 6px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              textAlign: "left",
+              width: "100%",
+            }}
+          >
+            <CatBubble icon={b.icon} color={b.color} size={compact ? 34 : 40} stroke={2} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, gap: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{b.name}</span>
+                <span className="num tnum" style={{ fontWeight: 600, fontSize: 14, color: over ? "var(--red-600)" : "var(--text)" }}>
+                  {budget ? `${fmt(b.total, currency)} de ${fmt(budget.limit, currency)}` : fmt(b.total, currency)}
+                </span>
+              </div>
+              <div style={{ height: 5, borderRadius: 999, background: "var(--bg-2)", overflow: "hidden" }}>
+                <div style={{ width: (budgetPct ?? b.pct) * 100 + "%", height: "100%", borderRadius: 999, background: barColor }} />
+              </div>
             </div>
-            <div style={{ height: 5, borderRadius: 999, background: "var(--bg-2)", overflow: "hidden" }}>
-              <div style={{ width: b.pct * 100 + "%", height: "100%", borderRadius: 999, background: b.color }} />
-            </div>
-          </div>
-          <span style={{ fontSize: 11.5, fontWeight: 800, color: "var(--text-3)", width: 32, textAlign: "right" }}>{Math.round(b.pct * 100)}%</span>
-        </button>
-      ))}
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: over ? "var(--red-600)" : "var(--text-3)", width: 32, textAlign: "right" }}>
+              {Math.round((budgetPct ?? b.pct) * 100)}%
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Gasto por balde (día/semana/mes, según bucketsFor) dentro del rango visible.
+function useExpenseTrend() {
+  const { visibleTx, range } = useStore();
+  return useMemo(() => {
+    const buckets = bucketsFor(range);
+    return buckets.map((b) => ({
+      key: b.key,
+      label: b.label,
+      value: visibleTx.reduce(
+        (sum, t) => (t.type === "expense" && t.date >= b.start && t.date <= b.end ? sum + t.amount : sum),
+        0
+      ),
+    }));
+  }, [visibleTx, range]);
+}
+
+function StatTile({ label, value, color = "var(--text)" }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ flex: "1 1 130px", background: "var(--surface)", borderRadius: 14, padding: "10px 12px", boxShadow: "var(--shadow-card)" }}>
+      <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3)" }}>{label}</div>
+      <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>{value}</div>
+    </div>
+  );
+}
+
+// Comparativa contra el período anterior equivalente + promedio diario, y
+// proyección a fin de mes cuando el rango elegido es el mes en curso.
+function ComparativeStats() {
+  const { totals, prevTotals, prevRange, range, currency } = useStore();
+  const days = daysBetween(range.start, range.end);
+  const avgPerDay = totals.expense / Math.max(days, 1);
+
+  const now = new Date();
+  const isCurrentMonth =
+    range.start.getDate() === 1 &&
+    range.start.getFullYear() === now.getFullYear() &&
+    range.start.getMonth() === now.getMonth();
+  const daysInThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projection = isCurrentMonth ? avgPerDay * daysInThisMonth : null;
+
+  const deltaPct = prevTotals.expense > 0 ? ((totals.expense - prevTotals.expense) / prevTotals.expense) * 100 : null;
+  const down = deltaPct !== null && deltaPct < 0;
+
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      {deltaPct !== null && (
+        <StatTile
+          label={`vs ${formatRangeLabel(prevRange, "Personalizado")}`}
+          color={down ? "var(--green-700)" : "var(--red-600)"}
+          value={`${Math.abs(Math.round(deltaPct))}%`}
+        />
+      )}
+      <StatTile label="Promedio / día" value={fmt(avgPerDay, currency)} />
+      {projection !== null && <StatTile label="Proyección fin de mes" value={fmt(projection, currency)} />}
+    </div>
+  );
+}
+
+function TrendSection() {
+  const trend = useExpenseTrend();
+  const total = trend.reduce((s, d) => s + d.value, 0);
+  if (total <= 0) return null;
+  return (
+    <div style={{ background: "var(--surface)", borderRadius: 16, padding: "14px 14px 8px", boxShadow: "var(--shadow-card)" }}>
+      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+        <Icon name="ChartColumn" size={13} stroke={2.4} color="var(--text-3)" /> Tendencia de gasto
+      </div>
+      <TrendBars data={trend} />
     </div>
   );
 }
@@ -99,6 +193,10 @@ export function DashboardMobile() {
   } else if (dashStyle === "B") {
     body = (
       <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
+        <div style={{ padding: "6px 18px 0", display: "flex", flexDirection: "column", gap: 10 }}>
+          <ComparativeStats />
+          <TrendSection />
+        </div>
         <div style={{ display: "grid", placeItems: "center", padding: "6px 0 12px" }}>
           <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={188} thickness={20}>
             <CenterBalance scale={0.9} />
@@ -112,6 +210,10 @@ export function DashboardMobile() {
   } else {
     body = (
       <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
+        <div style={{ padding: "2px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
+          <ComparativeStats />
+          <TrendSection />
+        </div>
         <div style={{ display: "grid", placeItems: "center", padding: "2px 0 10px" }}>
           <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={176} thickness={19}>
             <CenterBalance scale={0.86} />
@@ -136,7 +238,7 @@ export function DashboardMobile() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "6px 18px 10px", display: "flex", flexDirection: "column", gap: 12, flex: "0 0 auto" }}>
         <div style={{ display: "flex", justifyContent: "center" }}><PeriodPills /></div>
-        <MonthTabs />
+        <RangeNav />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>{body}</div>
       {sim === "normal" && visibleTx.length > 0 && (
@@ -165,12 +267,19 @@ export function DashboardDesktop() {
         </div>
       </div>
     );
+  const showStats = !(sim === "loading" || sim === "error" || sim === "empty" || visibleTx.length === 0);
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "26px 32px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <MonthNav center={false} />
+        <RangeNav center={false} />
         <PeriodPills />
       </div>
+      {showStats && (
+        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 18, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 260px" }}><ComparativeStats /></div>
+          <div style={{ flex: "2 1 360px" }}><TrendSection /></div>
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>{center}</div>
     </div>
   );

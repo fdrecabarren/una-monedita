@@ -68,7 +68,7 @@ const inputStyle: CSSProperties = {
   borderRadius: 12,
   padding: "12px 14px",
   fontFamily: "inherit",
-  fontSize: 15,
+  fontSize: 16,
   fontWeight: 700,
   color: "var(--text)",
   outline: "none",
@@ -170,7 +170,7 @@ export function SubEditor({
 
   return (
     <div className="um-modal-scrim" onClick={onClose}>
-      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480, maxHeight: "94vh", display: "flex", flexDirection: "column" }}>
+      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480, maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
         <div style={{ padding: "16px 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: "0 0 auto" }}>
           <div style={{ fontWeight: 800, fontSize: 18, fontFamily: "var(--font-serif)" }}>{isNew ? "Nuevo fijo" : "Editar fijo"}</div>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -178,7 +178,20 @@ export function SubEditor({
           </button>
         </div>
 
-        <div className="app-scroll" style={{ padding: "8px 20px 20px", display: "flex", flexDirection: "column", gap: 18, overflowY: "auto" }}>
+        <div
+          className="app-scroll"
+          style={{
+            padding: "8px 20px calc(20px + env(safe-area-inset-bottom))",
+            display: "flex",
+            flexDirection: "column",
+            gap: 18,
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            overscrollBehavior: "contain",
+          }}
+        >
           <Field label="Tipo">
             <Segmented
               value={type}
@@ -192,7 +205,7 @@ export function SubEditor({
           </Field>
 
           <Field label="Nombre">
-            <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Gimnasio, Claude, dominio…" style={inputStyle} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Gimnasio, Claude, dominio…" style={inputStyle} />
           </Field>
 
           <Field label="Monto">
@@ -201,16 +214,28 @@ export function SubEditor({
 
           {cats.length > 0 && (
             <Field label="Categoría">
-              <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+              <div className="cat-grid">
                 {cats.map((c) => (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => setCatId(c.id)}
-                    style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", flex: "0 0 auto" }}
+                    className="cat-card"
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "14px 6px",
+                      borderRadius: 16,
+                      background: catId === c.id ? `color-mix(in srgb, ${c.color} 14%, var(--surface))` : "var(--surface)",
+                      border: catId === c.id ? `2px solid ${c.color}` : "1px solid var(--line)",
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}
                   >
                     <CatBubble icon={c.icon} color={c.color} size={44} stroke={2} active={catId === c.id} />
-                    <span style={{ fontSize: 11, fontWeight: 700, color: catId === c.id ? "var(--text)" : "var(--text-3)", maxWidth: 58, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--text)", textAlign: "center", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {c.name}
                     </span>
                   </button>
@@ -244,7 +269,7 @@ export function SubEditor({
 
           <Field label="Próximo cobro">
             <div style={{ display: "flex", gap: 8 }}>
-              <input type="date" value={nextChargeDate} onChange={(e) => setNextChargeDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              <input type="date" value={nextChargeDate} onChange={(e) => setNextChargeDate(e.target.value)} style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
               <button
                 type="button"
                 onClick={recalcNextCharge}

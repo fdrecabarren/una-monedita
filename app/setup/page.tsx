@@ -83,7 +83,7 @@ export default function SetupPage() {
     background: "var(--surface)",
     border: "1px solid var(--line)",
     color: "var(--text)",
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: "inherit",
     fontWeight: 600,
     outline: "none",

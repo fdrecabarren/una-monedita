@@ -34,7 +34,7 @@ export function IconStoreModal({
       <div
         className="um-sheet"
         onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 480, display: "flex", flexDirection: "column", maxHeight: "92vh" }}
+        style={{ maxWidth: 480, display: "flex", flexDirection: "column", maxHeight: "92dvh" }}
       >
         <div style={{ padding: "14px 18px 8px", display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
           <div style={{ fontWeight: 800, fontSize: 17, fontFamily: "var(--font-serif)", flex: 1 }}>Tienda de iconos</div>
@@ -51,7 +51,7 @@ export function IconStoreModal({
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Buscar icono…"
-              style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 14, fontWeight: 600, color: "var(--text)" }}
+              style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }}
             />
           </div>
         </div>

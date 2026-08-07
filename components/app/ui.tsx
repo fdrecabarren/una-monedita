@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useStore, type Period } from "./store";
 import { Icon } from "./Icon";
+import { RangeModal } from "./modal-range";
 import { fmt } from "@/lib/format";
 
 export const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
@@ -9,39 +11,49 @@ export const MONTHS_FULL = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
-const PERIODS: Period[] = ["Día", "Semana", "Mes", "Año"];
+const PERIOD_ITEMS: { value: Period; label: string }[] = [
+  { value: "Día", label: "Día" },
+  { value: "Semana", label: "Semana" },
+  { value: "Mes", label: "Mes" },
+  { value: "Año", label: "Año" },
+  { value: "Personalizado", label: "Rango" },
+];
 
 export function PeriodPills({ size = "md" }: { size?: "sm" | "md" }) {
   const { period, setPeriod } = useStore();
+  const [rangeOpen, setRangeOpen] = useState(false);
   const pad = size === "sm" ? "5px 11px" : "7px 15px";
   const fs = size === "sm" ? 12.5 : 13.5;
   return (
-    <div style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999 }}>
-      {PERIODS.map((p) => {
-        const on = p === period;
-        return (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            style={{
-              padding: pad,
-              borderRadius: 999,
-              fontSize: fs,
-              fontWeight: 700,
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              color: on ? "var(--on-accent)" : "var(--text-2)",
-              background: on ? "var(--green)" : "transparent",
-              boxShadow: on ? "var(--shadow-fab)" : "none",
-              transition: "background .15s, color .15s",
-            }}
-          >
-            {p}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999 }}>
+        {PERIOD_ITEMS.map((p) => {
+          const on = p.value === period;
+          return (
+            <button
+              key={p.value}
+              onClick={() => (p.value === "Personalizado" ? setRangeOpen(true) : setPeriod(p.value))}
+              style={{
+                padding: pad,
+                borderRadius: 999,
+                fontSize: fs,
+                fontWeight: 700,
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                color: on ? "var(--on-accent)" : "var(--text-2)",
+                background: on ? "var(--green)" : "transparent",
+                boxShadow: on ? "var(--shadow-fab)" : "none",
+                transition: "background .15s, color .15s",
+              }}
+            >
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+      {rangeOpen && <RangeModal onClose={() => setRangeOpen(false)} />}
+    </>
   );
 }
 
@@ -62,34 +74,28 @@ export function MonthNav({ center = true }: { center?: boolean }) {
   );
 }
 
-export function MonthTabs() {
-  const { month, year, navMonth } = useStore();
-  const tabs = [-2, -1, 0, 1, 2].map((d) => ({ d, m: (((month + d) % 12) + 12) % 12 }));
+// Cabecera de navegación del Resumen: ‹ [etiqueta del rango] › — funciona para
+// los cinco períodos (Día/Semana/Mes/Año/Rango); tocar la etiqueta abre el
+// selector de rango, igual que la pastilla "Rango" de PeriodPills.
+export function RangeNav({ center = true }: { center?: boolean }) {
+  const { rangeLabel, navRange } = useStore();
+  const [open, setOpen] = useState(false);
   return (
-    <div style={{ display: "flex", gap: 2, justifyContent: "center", alignItems: "center" }}>
-      {tabs.map(({ d, m }) => {
-        const on = d === 0;
-        return (
-          <button
-            key={d}
-            onClick={() => d !== 0 && navMonth(d)}
-            style={{
-              padding: "5px 12px",
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontWeight: on ? 800 : 600,
-              fontSize: on ? 15 : 13.5,
-              color: on ? "var(--text)" : "var(--text-3)",
-              borderBottom: on ? "2px solid var(--green)" : "2px solid transparent",
-            }}
-          >
-            {MONTHS[m]}
-            {on ? " " + year : ""}
-          </button>
-        );
-      })}
+    <div style={{ display: "flex", alignItems: "center", gap: 4, justifyContent: center ? "center" : "flex-start" }}>
+      <button className="icon-btn" onClick={() => navRange(-1)} aria-label="Período anterior">
+        <Icon name="ChevronLeft" size={20} stroke={2.4} color="var(--text-2)" />
+      </button>
+      <button
+        onClick={() => setOpen(true)}
+        className="num"
+        style={{ minWidth: 132, textAlign: "center", fontWeight: 600, fontSize: 16, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--text)", padding: "4px 6px" }}
+      >
+        {rangeLabel}
+      </button>
+      <button className="icon-btn" onClick={() => navRange(1)} aria-label="Período siguiente">
+        <Icon name="ChevronRight" size={20} stroke={2.4} color="var(--text-2)" />
+      </button>
+      {open && <RangeModal onClose={() => setOpen(false)} />}
     </div>
   );
 }

@@ -10,7 +10,22 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import type { Category, Transaction, Subscription, Frequency, SubscriptionStatus, Currency } from "@/lib/notion/schemas";
+import type { Category, Transaction, Subscription, Budget, Frequency, SubscriptionStatus, Currency } from "@/lib/notion/schemas";
+import {
+  type Period,
+  type DateRange,
+  rangeFor,
+  shiftRange,
+  rangeLabel as formatRangeLabel,
+  previousRange,
+  yearsIn,
+  addMonthsClamped,
+  startOfDay,
+  endOfDay,
+  startOfMonth,
+  toISO,
+  parseDate,
+} from "@/lib/date-range";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -55,7 +70,19 @@ export interface UISub {
   cat: string | null;
 }
 
-export type Period = "Día" | "Semana" | "Mes" | "Año";
+// Presupuesto mensual por categoría (DB Budgets). `month` es el primer día del
+// mes en formato ISO (YYYY-MM-01) — un presupuesto por categoría y mes.
+export interface UIBudget {
+  id: string;
+  name: string;
+  limit: number;
+  currency: AppCurrency;
+  month: string;
+  recurring: boolean;
+  alertAt80: boolean;
+  categoryId: string | null;
+}
+
 export type Theme = "light" | "dark";
 export type DashStyle = "A" | "B" | "C";
 export type Accent = "verde" | "teal" | "bosque";
@@ -88,9 +115,14 @@ interface StoreValue {
   totals: { income: number; expense: number; balance: number };
   period: Period;
   setPeriod: (p: Period) => void;
+  range: DateRange;
+  prevRange: DateRange;
+  rangeLabel: string;
+  navRange: (delta: number) => void;
+  setRange: (start: Date, end: Date) => void;
+  prevTotals: { income: number; expense: number; balance: number };
   month: number;
   year: number;
-  ref: Date;
   navMonth: (delta: number) => void;
   theme: Theme;
   setTheme: (t: Theme) => void;
@@ -128,6 +160,8 @@ interface StoreValue {
   updateSubscription: (id: string, patch: Partial<NewSubInput> & { status?: SubscriptionStatus }) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
   paySubscription: (id: string, opts?: { date?: string; amount?: number }) => Promise<void>;
+  budgets: UIBudget[];
+  setBudget: (categoryId: string, limit: number) => Promise<void>;
 }
 
 export interface NewSubInput {
@@ -159,17 +193,6 @@ function catToUI(c: Category): UICategory {
     color: c.color || DEFAULT_COLOR,
     type: c.kind === "Ingreso" ? "income" : "expense",
   };
-}
-
-function parseDate(s: string | null): Date {
-  if (!s) return new Date();
-  const [y, m, d] = s.split("T")[0].split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1, 12, 0, 0);
-}
-
-function toISO(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, "0");
-  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
 }
 
 function txToUI(t: Transaction, byId: Record<string, UICategory>): UITx {
@@ -207,12 +230,17 @@ function subToUI(s: Subscription): UISub {
   };
 }
 
-function startOfWeek(d: Date): Date {
-  const x = new Date(d);
-  const day = (x.getDay() + 6) % 7; // Mon = 0
-  x.setDate(x.getDate() - day);
-  x.setHours(0, 0, 0, 0);
-  return x;
+function budgetToUI(b: Budget): UIBudget {
+  return {
+    id: b.id,
+    name: b.name,
+    limit: b.limit,
+    currency: b.currency ?? "ARS",
+    month: b.month ?? toISO(new Date()),
+    recurring: b.recurring,
+    alertAt80: b.alertAt80,
+    categoryId: b.categoryId,
+  };
 }
 
 function persist(key: string, value: string) {
@@ -246,6 +274,8 @@ export function StoreProvider({
     (initialSubscriptions ?? []).map(subToUI)
   );
 
+  const [budgets, setBudgets] = useState<UIBudget[]>([]);
+
   const byId = useMemo(
     () => Object.fromEntries(categories.map((c) => [c.id, c])),
     [categories]
@@ -260,11 +290,13 @@ export function StoreProvider({
   });
 
   const now = new Date();
-  const [period, setPeriod] = useState<Period>("Mes");
-  const [month, setMonth] = useState(
-    initialYear === now.getFullYear() ? now.getMonth() : 0
+  const [periodRaw, setPeriodRaw] = useState<Period>("Mes");
+  const [anchor, setAnchor] = useState<Date>(() =>
+    initialYear === now.getFullYear() ? now : new Date(initialYear, 0, 1)
   );
-  const [year, setYear] = useState(initialYear);
+  const [customRange, setCustomRange] = useState<DateRange | null>(null);
+  const month = anchor.getMonth();
+  const year = anchor.getFullYear();
   const [loading, setLoading] = useState(false);
 
   const [theme, setThemeRaw] = useState<Theme>("light");
@@ -280,11 +312,23 @@ export function StoreProvider({
     const d = (localStorage.getItem("um.dash") as DashStyle) || "A";
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
+    const p = (localStorage.getItem("um.period") as Period) || "Mes";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from localStorage on mount
     setThemeRaw(t);
     setDashStyleRaw(d);
     setAccentRaw(a);
     setCurrencyRaw(c);
+    if (p === "Personalizado") {
+      const rs = localStorage.getItem("um.rangeStart");
+      const re = localStorage.getItem("um.rangeEnd");
+      if (rs && re) {
+        setCustomRange({ start: startOfDay(parseDate(rs)), end: endOfDay(parseDate(re)) });
+        setPeriodRaw(p);
+      }
+      // sin rango guardado, se queda en "Mes" (default) en vez de un Personalizado vacío
+    } else {
+      setPeriodRaw(p);
+    }
   }, []);
 
   const setTheme = useCallback((v: Theme) => {
@@ -302,6 +346,51 @@ export function StoreProvider({
   const setCurrency = useCallback((v: AppCurrency) => {
     setCurrencyRaw(v);
     persist("um.currency", v);
+  }, []);
+
+  const setPeriod = useCallback((p: Period) => {
+    setSim((s) => (s === "empty" || s === "error" ? "normal" : s));
+    setPeriodRaw(p);
+    persist("um.period", p);
+  }, []);
+
+  // rango efectivo: derivado del anchor para períodos fijos, o el rango
+  // custom elegido en el selector para "Personalizado" (con fallback al mes
+  // actual mientras el usuario todavía no eligió fechas).
+  const range = useMemo<DateRange>(() => {
+    if (periodRaw === "Personalizado") return customRange ?? rangeFor("Mes", anchor);
+    return rangeFor(periodRaw, anchor);
+  }, [periodRaw, anchor, customRange]);
+
+  const prevRange = useMemo<DateRange>(() => previousRange(range), [range]);
+
+  const rangeLabelStr = useMemo(() => formatRangeLabel(range, periodRaw), [range, periodRaw]);
+
+  const navRange = useCallback(
+    (delta: number) => {
+      setSim((s) => (s === "empty" || s === "error" ? "normal" : s));
+      if (periodRaw === "Personalizado") {
+        const next = shiftRange(customRange ?? range, "Personalizado", delta);
+        setCustomRange(next);
+        persist("um.rangeStart", toISO(next.start));
+        persist("um.rangeEnd", toISO(next.end));
+      } else {
+        const next = shiftRange(range, periodRaw, delta);
+        setAnchor(next.start);
+      }
+    },
+    [periodRaw, range, customRange]
+  );
+
+  const setRangeFn = useCallback((start: Date, end: Date) => {
+    setSim((s) => (s === "empty" || s === "error" ? "normal" : s));
+    const [s0, e0] = start.getTime() <= end.getTime() ? [start, end] : [end, start];
+    const next: DateRange = { start: startOfDay(s0), end: endOfDay(e0) };
+    setCustomRange(next);
+    setPeriodRaw("Personalizado");
+    persist("um.period", "Personalizado");
+    persist("um.rangeStart", toISO(next.start));
+    persist("um.rangeEnd", toISO(next.end));
   }, []);
 
   const [entry, setEntry] = useState<EntryState>({
@@ -330,8 +419,6 @@ export function StoreProvider({
     noticeTimer.current = setTimeout(() => setNotice(null), 4000);
   }, []);
   const closeEntry = useCallback(() => setEntry((e) => ({ ...e, open: false })), []);
-
-  const ref = useMemo(() => new Date(year, month, 15), [year, month]);
 
   const transactions = useMemo(() => txByYear[year] || [], [txByYear, year]);
 
@@ -362,43 +449,92 @@ export function StoreProvider({
   const navMonth = useCallback(
     (delta: number) => {
       setSim((s) => (s === "empty" || s === "error" ? "normal" : s));
-      let m = month + delta;
-      let y = year;
-      if (m < 0) {
-        m = 11;
-        y -= 1;
-      }
-      if (m > 11) {
-        m = 0;
-        y += 1;
-      }
-      setMonth(m);
-      setYear(y);
-      if (!txByYear[y]) void ensureYear(y);
+      const next = addMonthsClamped(anchor, delta);
+      setAnchor(next);
+      if (!txByYear[next.getFullYear()]) void ensureYear(next.getFullYear());
     },
-    [month, year, txByYear, ensureYear]
+    [anchor, txByYear, ensureYear]
+  );
+
+  // asegura en cache todos los años que tocan el rango visible y el de
+  // comparación — cubre pills fijas, navRange y el selector de rango custom.
+  useEffect(() => {
+    const years = new Set<number>([...yearsIn(range), ...yearsIn(prevRange)]);
+    years.forEach((y) => {
+      if (!txByYear[y]) void ensureYear(y);
+    });
+  }, [range, prevRange, txByYear, ensureYear]);
+
+  // presupuestos del mes que muestra el Calendario/anchor (son mensuales por
+  // definición del schema de Notion — no siguen al rango del Resumen).
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/budgets?year=${year}&month=${month + 1}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`GET /api/budgets → ${res.status}`))))
+      .then((data: { budgets: Budget[] }) => {
+        if (!cancelled) setBudgets(data.budgets.map(budgetToUI));
+      })
+      .catch((err) => console.error(err));
+    return () => {
+      cancelled = true;
+    };
+  }, [year, month]);
+
+  const setBudget = useCallback<StoreValue["setBudget"]>(
+    async (categoryId, limit) => {
+      const existing = budgets.find((b) => b.categoryId === categoryId);
+      if (existing) {
+        const res = await fetch(`/api/budgets/${existing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit }),
+        });
+        if (!res.ok) throw new Error("update budget failed");
+        const updated: Budget = await res.json();
+        setBudgets((list) => list.map((b) => (b.id === existing.id ? budgetToUI(updated) : b)));
+      } else {
+        const catName = byId[categoryId]?.name ?? "Presupuesto";
+        const res = await fetch("/api/budgets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: catName,
+            limit,
+            currency,
+            month: toISO(startOfMonth(anchor)),
+            categoryId,
+          }),
+        });
+        if (!res.ok) throw new Error("create budget failed");
+        const created: Budget = await res.json();
+        setBudgets((list) => [...list, budgetToUI(created)]);
+      }
+    },
+    [budgets, byId, currency, anchor]
   );
 
   const visibleTx = useMemo(() => {
     if (sim === "empty" || sim === "error" || sim === "loading") return [];
-    return transactions.filter((t) => {
-      const d = t.date;
-      if (period === "Año") return d.getFullYear() === year;
-      if (period === "Mes")
-        return d.getFullYear() === year && d.getMonth() === month;
-      if (period === "Semana") {
-        const s = startOfWeek(ref);
-        const e = new Date(s);
-        e.setDate(s.getDate() + 7);
-        return d >= s && d < e;
-      }
-      return (
-        d.getFullYear() === year &&
-        d.getMonth() === month &&
-        d.getDate() === ref.getDate()
-      );
+    return yearsIn(range)
+      .flatMap((y) => txByYear[y] ?? [])
+      .filter((t) => t.date >= range.start && t.date <= range.end);
+  }, [txByYear, range, sim]);
+
+  const prevVisibleTx = useMemo(() => {
+    return yearsIn(prevRange)
+      .flatMap((y) => txByYear[y] ?? [])
+      .filter((t) => t.date >= prevRange.start && t.date <= prevRange.end);
+  }, [txByYear, prevRange]);
+
+  const prevTotals = useMemo(() => {
+    let income = 0;
+    let expense = 0;
+    prevVisibleTx.forEach((x) => {
+      if (x.type === "income") income += x.amount;
+      else expense += x.amount;
     });
-  }, [transactions, period, month, year, ref, sim]);
+    return { income, expense, balance: income - expense };
+  }, [prevVisibleTx]);
 
   const breakdown = useMemo<BreakdownItem[]>(() => {
     const totals: Record<string, number> = {};
@@ -711,11 +847,16 @@ export function StoreProvider({
     visibleTx,
     breakdown,
     totals,
-    period,
+    period: periodRaw,
     setPeriod,
+    range,
+    prevRange,
+    rangeLabel: rangeLabelStr,
+    navRange,
+    setRange: setRangeFn,
+    prevTotals,
     month,
     year,
-    ref,
     navMonth,
     theme,
     setTheme,
@@ -747,6 +888,8 @@ export function StoreProvider({
     updateSubscription: updateSubscriptionFn,
     deleteSubscription: deleteSubscriptionFn,
     paySubscription,
+    budgets,
+    setBudget,
   };
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;
@@ -759,3 +902,4 @@ export function useStore(): StoreValue {
 }
 
 export { toISO, parseDate };
+export type { Period, DateRange };

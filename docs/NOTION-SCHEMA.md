@@ -294,6 +294,13 @@ de febrero, no el 3 de marzo.
 | `AlertAt80` | checkbox | Avisar al 80% del límite |
 | `Category` | relation → Categories | |
 
+Usado por la app desde Categorías (campo "Presupuesto mensual" al editar una
+categoría de Gasto) y mostrado en el Resumen (barra de progreso gasto/límite,
+solo cuando el rango visible es un mes completo). API: `GET/POST /api/budgets`,
+`PATCH /api/budgets/[id]` — ver `lib/notion/budgets.ts`. Un presupuesto por
+categoría y mes; no hay lógica automática que copie `Recurring = true` al mes
+siguiente todavía (queda para un agente/cron futuro).
+
 ### FX Rates
 
 | Propiedad | Tipo | Notas |

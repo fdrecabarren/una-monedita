@@ -56,13 +56,17 @@ function inlineRichText(text: string): RichText[] {
 }
 
 function parseTable(lines: string[], start: number): { block: Block; next: number } {
+  // Solo los `|` sin escapar separan columnas: las tablas del schema usan `\|`
+  // dentro de una celda para listar valores válidos (`Gasto` \| `Ingreso`).
+  // Partir por todos los pipes generaba filas con más celdas que table_width y
+  // Notion rechazaba la tabla entera con 400.
   const rowCells = (line: string) =>
     line
       .trim()
       .replace(/^\|/, "")
-      .replace(/\|$/, "")
-      .split("|")
-      .map((c) => c.trim());
+      .replace(/(?<!\\)\|$/, "")
+      .split(/(?<!\\)\|/)
+      .map((c) => c.trim().replace(/\\\|/g, "|"));
 
   const header = rowCells(lines[start]);
   // lines[start + 1] is the "---|---|---" separator — skip it

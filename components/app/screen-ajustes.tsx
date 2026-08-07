@@ -99,7 +99,9 @@ function MantenimientoSection() {
     try {
       const res = await fetch("/api/notion/guide", { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error ?? "Error");
+      // el endpoint manda `detail` con el error crudo de Notion — sin él el
+      // mensaje genérico no alcanza para diagnosticar desde el celular
+      if (!res.ok) throw new Error([data?.error, data?.detail].filter(Boolean).join(" — ") || "Error");
       setGuideState({ kind: "ok", message: data.url });
     } catch (err) {
       setGuideState({ kind: "error", message: err instanceof Error ? err.message : "Error publicando la guía" });
@@ -153,7 +155,7 @@ function MantenimientoSection() {
           </a>
         )}
         {guideState.kind === "error" && (
-          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700 }}>{guideState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700, wordBreak: "break-word", lineHeight: 1.4 }}>{guideState.message}</div>
         )}
 
         <button

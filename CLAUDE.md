@@ -89,6 +89,9 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | `/api/subscriptions/[id]/pay` | POST | Cobra ahora: crea Transaction + avanza NextChargeDate |
 | `/api/subscriptions/migrate` | POST | Agrega a la DB Subscriptions las props que falten (idempotente) |
 | `/api/cron/subscriptions` | GET | Cron diario (`CRON_SECRET`): cobra los `AutoCreate=true` vencidos |
+| `/api/budgets` | GET | Lista presupuestos del mes (`?year=YYYY&month=1-12`) |
+| `/api/budgets` | POST | Crea presupuesto (name, limit, currency, month, categoryId?) |
+| `/api/budgets/[id]` | PATCH | Edita límite / recurring / alertAt80 |
 | `/api/notion/guide` | POST | Publica `docs/NOTION-SCHEMA.md` como subpágina "📖 Guía del sistema" en Notion (creds de sesión) |
 | `/api/me` | GET | Estado de config Notion; `?full=1` además resuelve los 6 DB IDs + página padre |
 
@@ -112,6 +115,36 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   usa las creds de la sesión logueada — no requiere `NOTION_TOKEN` local).
   Fuente: [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md).
 
+## Resumen por rango de fechas
+
+- Un único modelo de rango (`lib/date-range.ts`, puro) alimenta el Resumen:
+  `Período` = Día/Semana/Mes/Año/Personalizado. `store.tsx` deriva `range`
+  (`{start,end}`) del `anchor` + período elegido; `Personalizado` usa
+  `customRange` (elegido a mano o vía atajos en `modal-range.tsx`).
+- `PeriodPills` (pastillas) + `RangeNav` (`‹ etiqueta ›`, tocar abre el
+  selector) en `ui.tsx`. `navRange(delta)` mueve el rango completo (para
+  Personalizado, por el propio largo del rango). `month`/`year`/`navMonth` se
+  mantienen aparte para el Calendario (comparten el mismo `anchor`).
+- `visibleTx`/`totals` ya filtran por `range` en vez de mes fijo — cubre
+  rangos que cruzan de año (`yearsIn(range)` dispara el fetch de cada año que
+  falte). `prevRange`/`prevTotals` = mismo largo, tramo anterior — alimentan
+  la comparativa (`ComparativeStats`) y el mini-gráfico de tendencia
+  (`TrendBars.tsx`, baldes vía `bucketsFor(range)`).
+
+## Presupuestos por categoría
+
+- DB Notion: `Budgets` (`lib/notion/budgets.ts` — `getBudgetsByMonth`,
+  `createBudget`, `updateBudget`, todas con `creds?: NotionCreds` como las
+  demás). Son **mensuales**: un presupuesto por categoría y mes (`Month` =
+  primer día del mes).
+- Se editan desde Categorías (campo "Presupuesto mensual" al editar una
+  categoría de Gasto) → `store.setBudget(categoryId, limit)` hace upsert
+  (PATCH si ya existe uno para el mes del `anchor`, POST si no).
+- En el Resumen, `LegendList` solo cruza gasto real vs límite cuando el rango
+  visible es un mes completo (`isFullMonthRange`); en Día/Semana/Año/rangos
+  parciales vuelve a mostrar el % relativo normal. Ámbar al 80% (si
+  `AlertAt80`), rojo al superar el límite.
+
 ## Categorías (set Monefy actual)
 
 **Gasto:** Comida·Utensils, Supermercado·ShoppingCart, Transporte·Car, Casa·House, Servicios·Plug, Ropa·Shirt, Ocio·Gamepad2, Salud·HeartPulse, Café·Coffee, Mascotas·PawPrint, Educación·GraduationCap, Regalos·Gift  
@@ -121,17 +154,19 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 ## Componentes clave (`components/app/`)
 
 - `AppRoot.tsx` — StoreProvider + Shell, recibe initial data del server
-- `store.tsx` — context store wired a API (CRUD tx/categorías, filtro período, cache por año, theme/dashStyle/accent)
+- `store.tsx` — context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, theme/dashStyle/accent)
 - `Shell.tsx` — layout responsive (Sidebar desktop / BottomNav móvil), nav, ThemeToggle
 - `Icon.tsx` — `Icon` (Lucide vía registry) + `CatBubble`
-- `Donut.tsx` — donut SVG segmentado
-- `ui.tsx` — PeriodPills, MonthNav/Tabs, CenterBalance, ActionButton, Segmented, StateView
-- `screen-{dashboard,movimientos,calendario,categorias,ajustes}.tsx`
-- `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda)
+- `Donut.tsx` — donut SVG segmentado; `TrendBars.tsx` — mini-gráfico de barras (mismo enfoque casero, sin libs)
+- `ui.tsx` — PeriodPills, MonthNav (Calendario) / RangeNav (Resumen), CenterBalance, ActionButton, Segmented, StateView
+- `screen-{dashboard,movimientos,calendario,categorias,recurrentes,ajustes}.tsx`
+- `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda), `modal-recurrente.tsx` (fijos), `modal-range.tsx` (selector de rango del Resumen)
 - `lib/icon-registry.ts`, `lib/icon-catalog.ts`, `lib/format.ts`
+- `lib/date-range.ts` — motor puro de rangos de fechas (Día/Semana/Mes/Año/Personalizado) para el Resumen
 - `lib/notion/client.ts` — `queryDatabase()` helper REST
 - `lib/notion/markdown-blocks.ts` — markdown → bloques Notion + publish helpers, usado por `scripts/publish-notion-guide.ts` y `/api/notion/guide`
 - `lib/recurrence.ts` — motor de recurrencia de gastos/ingresos fijos
+- `lib/notion/budgets.ts` — CRUD de presupuestos mensuales por categoría
 
 ## Vercel deployment — caveats
 
