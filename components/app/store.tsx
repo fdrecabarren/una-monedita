@@ -17,7 +17,7 @@ import {
   rangeFor,
   shiftRange,
   rangeLabel as formatRangeLabel,
-  previousRange,
+  comparisonRange,
   yearsIn,
   addMonthsClamped,
   startOfDay,
@@ -362,7 +362,9 @@ export function StoreProvider({
     return rangeFor(periodRaw, anchor);
   }, [periodRaw, anchor, customRange]);
 
-  const prevRange = useMemo<DateRange>(() => previousRange(range), [range]);
+  // Para períodos fijos compara contra el anterior completo (febrero vs todo
+  // enero); "Personalizado" compara contra un tramo del mismo largo.
+  const prevRange = useMemo<DateRange>(() => comparisonRange(range, periodRaw), [range, periodRaw]);
 
   const rangeLabelStr = useMemo(() => formatRangeLabel(range, periodRaw), [range, periodRaw]);
 

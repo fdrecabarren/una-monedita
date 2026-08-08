@@ -29,6 +29,10 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const budget = await updateBudget(id, parsed.data, creds);
-  return NextResponse.json(budget);
+  try {
+    const budget = await updateBudget(id, parsed.data, creds);
+    return NextResponse.json(budget);
+  } catch (err) {
+    return NextResponse.json({ error: "Error actualizando el presupuesto en Notion", detail: String(err) }, { status: 502 });
+  }
 }

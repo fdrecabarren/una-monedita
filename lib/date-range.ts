@@ -135,10 +135,18 @@ export function shiftRange(range: DateRange, period: Period, delta: number): Dat
   }
 }
 
-// Mismo largo, tramo inmediatamente anterior — para la comparativa del Resumen.
+// Mismo largo, tramo inmediatamente anterior.
 export function previousRange(range: DateRange): DateRange {
   const len = daysBetween(range.start, range.end);
   return { start: addDays(range.start, -len), end: addDays(range.end, -len) };
+}
+
+// Tramo contra el que compara el Resumen. Para los períodos fijos es el período
+// anterior COMPLETO (febrero se compara contra todo enero, no contra los 28 días
+// previos, que arrancarían el 4 de enero); solo "Personalizado" usa el criterio
+// de mismo largo, que es el único que tiene sentido para un rango arbitrario.
+export function comparisonRange(range: DateRange, period: Period): DateRange {
+  return period === "Personalizado" ? previousRange(range) : shiftRange(range, period, -1);
 }
 
 function shortDate(d: Date, withYear = false): string {

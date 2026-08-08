@@ -120,11 +120,17 @@ function StatTile({ label, value, color = "var(--text)" }: { label: string; valu
 // Comparativa contra el período anterior equivalente + promedio diario, y
 // proyección a fin de mes cuando el rango elegido es el mes en curso.
 function ComparativeStats() {
-  const { totals, prevTotals, prevRange, range, currency } = useStore();
+  const { totals, prevTotals, prevRange, range, period, currency } = useStore();
   const days = daysBetween(range.start, range.end);
-  const avgPerDay = totals.expense / Math.max(days, 1);
 
+  // El promedio se calcula sobre los días YA transcurridos del rango, no sobre
+  // su largo total: si no, en el mes en curso se divide por 31 desde el día 1 y
+  // la proyección (promedio × 31) devuelve exactamente lo ya gastado.
   const now = new Date();
+  const effectiveEnd = range.end > now ? now : range.end;
+  const elapsedDays = Math.min(Math.max(daysBetween(range.start, effectiveEnd), 1), days);
+  const avgPerDay = totals.expense / elapsedDays;
+
   const isCurrentMonth =
     range.start.getDate() === 1 &&
     range.start.getFullYear() === now.getFullYear() &&
@@ -139,7 +145,7 @@ function ComparativeStats() {
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {deltaPct !== null && (
         <StatTile
-          label={`vs ${formatRangeLabel(prevRange, "Personalizado")}`}
+          label={`vs ${formatRangeLabel(prevRange, period)}`}
           color={down ? "var(--green-700)" : "var(--red-600)"}
           value={`${Math.abs(Math.round(deltaPct))}%`}
         />

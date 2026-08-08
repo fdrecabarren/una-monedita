@@ -17,8 +17,15 @@ export async function GET(request: Request) {
   if (Number.isNaN(year) || Number.isNaN(month) || month < 1 || month > 12) {
     return NextResponse.json({ error: "year/month inválido" }, { status: 400 });
   }
-  const budgets = await getBudgetsByMonth(year, month, creds);
-  return NextResponse.json({ budgets });
+  // La DB Budgets puede no tener las props que espera el schema (no hay
+  // migración para ella, a diferencia de Subscriptions). Devolvemos el detalle
+  // en vez de un 500 mudo: el store degrada solo y sin presupuestos.
+  try {
+    const budgets = await getBudgetsByMonth(year, month, creds);
+    return NextResponse.json({ budgets });
+  } catch (err) {
+    return NextResponse.json({ error: "Error leyendo Budgets en Notion", detail: String(err) }, { status: 502 });
+  }
 }
 
 const CreateSchema = z.object({
@@ -44,6 +51,10 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const budget = await createBudget(parsed.data, creds);
-  return NextResponse.json(budget, { status: 201 });
+  try {
+    const budget = await createBudget(parsed.data, creds);
+    return NextResponse.json(budget, { status: 201 });
+  } catch (err) {
+    return NextResponse.json({ error: "Error creando el presupuesto en Notion", detail: String(err) }, { status: 502 });
+  }
 }
