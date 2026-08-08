@@ -185,7 +185,8 @@ function SaldoBar() {
 }
 
 export function DashboardMobile() {
-  const { dashStyle, sim, setSim, breakdown, visibleTx, currency } = useStore();
+  const { dashStyle, sim, setSim, breakdown, visibleTx, currency, budgets, range } = useStore();
+  const showBudgets = isFullMonthRange(range);
   let body;
   if (sim === "loading") body = <StateView kind="loading" />;
   else if (sim === "error") body = <StateView kind="error" onRetry={() => setSim("normal")} />;
@@ -226,15 +227,28 @@ export function DashboardMobile() {
           </Donut>
         </div>
         <div style={{ padding: "0 16px 14px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          {breakdown.slice(0, 8).map((b) => (
-            <div key={b.cat} style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", borderRadius: 14, padding: "9px 11px", boxShadow: "var(--shadow-card)" }}>
-              <CatBubble icon={b.icon} color={b.color} size={34} stroke={2} />
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</div>
-                <div className="num tnum" style={{ fontSize: 11.5, color: "var(--text-3)", fontWeight: 600 }}>{Math.round(b.pct * 100)}% · {fmtShort(b.total, currency)}</div>
+          {breakdown.slice(0, 8).map((b) => {
+            const bud = showBudgets ? budgets.find((x) => x.categoryId === b.cat) : undefined;
+            const pct = bud && bud.limit > 0 ? Math.min(b.total / bud.limit, 1) : null;
+            const over = pct !== null && b.total > bud!.limit;
+            const near = pct !== null && bud!.alertAt80 && pct >= 0.8;
+            return (
+              <div key={b.cat} style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", borderRadius: 14, padding: "9px 11px", boxShadow: "var(--shadow-card)" }}>
+                <CatBubble icon={b.icon} color={b.color} size={34} stroke={2} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</div>
+                  <div className="num tnum" style={{ fontSize: 11.5, color: over ? "var(--red-600)" : "var(--text-3)", fontWeight: 600 }}>
+                    {bud ? `${fmtShort(b.total, currency)} / ${fmtShort(bud.limit, currency)}` : `${Math.round(b.pct * 100)}% · ${fmtShort(b.total, currency)}`}
+                  </div>
+                  {pct !== null && (
+                    <div style={{ height: 4, borderRadius: 999, background: "var(--bg-2)", overflow: "hidden", marginTop: 4 }}>
+                      <div style={{ width: pct * 100 + "%", height: "100%", borderRadius: 999, background: over ? "var(--red)" : near ? "var(--cat-fun)" : b.color }} />
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
