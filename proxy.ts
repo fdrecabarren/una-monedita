@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { decryptSession, COOKIE_NAME } from "@/lib/auth/session";
+import { decryptSession, devAuthBypass, COOKIE_NAME } from "@/lib/auth/session";
 
 const PUBLIC_PATHS = ["/login", "/api/auth"];
 // Authenticated users may reach these even without Notion creds configured.
@@ -15,6 +15,12 @@ function redirectToLogin(req: NextRequest, pathname: string): NextResponse {
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
+  // Bypass de desarrollo local (ver devAuthBypass): sin login y sin cookie.
+  // Imposible de activar en el deploy — allí NODE_ENV siempre es "production".
+  if (devAuthBypass()) {
+    return NextResponse.next();
+  }
 
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();

@@ -82,6 +82,18 @@ export async function verifySessionToken(token: string): Promise<boolean> {
   return (await decryptSession(token)) !== null;
 }
 
+// Bypass de auth SOLO para desarrollo local. Doble candado:
+//   1. NODE_ENV === "development"  → solo bajo `next dev`. Vercel compila
+//      siempre con NODE_ENV="production", así que allí esta rama es
+//      código muerto que nunca se puede activar.
+//   2. DEV_AUTH_BYPASS === "1"     → opt-in explícito en .env.local, que está
+//      gitignoreado y nunca sale de esta máquina.
+// Si alguna vez esto devuelve true en un deploy, es un incidente: significa que
+// alguien puso NODE_ENV=development en producción.
+export function devAuthBypass(): boolean {
+  return process.env.NODE_ENV === "development" && process.env.DEV_AUTH_BYPASS === "1";
+}
+
 // Build NotionCreds from env vars. Returns null if not configured.
 // Exported as getCredsFromEnv() for callers with no session cookie to read
 // (e.g. the Vercel cron route, authenticated by CRON_SECRET instead).
@@ -129,7 +141,7 @@ export async function getNotionCredsFromCookieString(
   cookieHeader: string
 ): Promise<NotionCreds | null> {
   const session = await decryptSession(sessionTokenFromCookieString(cookieHeader));
-  if (!session) return null;
+  if (!session) return devAuthBypass() ? credsFromEnv() : null;
   return credsFromPayload(session) ?? credsFromEnv();
 }
 
@@ -145,7 +157,11 @@ export async function getConfigStatus(
   cookieHeader: string
 ): Promise<{ configured: boolean; via: "jwt" | "env" | null }> {
   const session = await decryptSession(sessionTokenFromCookieString(cookieHeader));
-  if (!session) return { configured: false, via: null };
+  if (!session) {
+    return devAuthBypass() && credsFromEnv()
+      ? { configured: true, via: "env" }
+      : { configured: false, via: null };
+  }
   if (credsFromPayload(session)) return { configured: true, via: "jwt" };
   if (credsFromEnv()) return { configured: true, via: "env" };
   return { configured: false, via: null };

@@ -42,6 +42,8 @@ import {
   Circle, CalendarDays, Database,
   // recurrentes
   Repeat, CalendarClock, BellRing, PauseCircle, PlayCircle,
+  // filtros
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 
@@ -73,6 +75,8 @@ export const ICONS: Record<string, LucideIcon> = {
   PenLine, Shapes, Moon, CloudOff, CircleDollarSign, List, Settings, LogOut, Search,
   Circle, CalendarDays, Database,
   Repeat, CalendarClock, BellRing, PauseCircle, PlayCircle,
+  // filtros
+  SlidersHorizontal,
 };
 
 export const FALLBACK_ICON: LucideIcon = Tag;

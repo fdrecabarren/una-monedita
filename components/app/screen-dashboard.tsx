@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { useStore } from "./store";
+import { useStore, type TxType } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Donut } from "./Donut";
 import { TrendBars } from "./TrendBars";
-import { PeriodPills, RangeNav, CenterBalance, ActionButton, StateView } from "./ui";
+import { PeriodPills, RangeNav, CenterBalance, ActionButton, StateView, FocusToggle } from "./ui";
 import { fmt, fmtShort } from "@/lib/format";
 import { bucketsFor, daysBetween, endOfMonth, rangeLabel as formatRangeLabel } from "@/lib/date-range";
 
@@ -43,8 +43,8 @@ function isFullMonthRange(range: { start: Date; end: Date }): boolean {
 }
 
 export function LegendList({ limit = 99, compact = false }: { limit?: number; compact?: boolean }) {
-  const { breakdown, setScreen, currency, budgets, range } = useStore();
-  const showBudgets = isFullMonthRange(range);
+  const { breakdown, setScreen, currency, budgets, range, focus } = useStore();
+  const showBudgets = focus === "expense" && isFullMonthRange(range);
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
       {breakdown.slice(0, limit).map((b) => {
@@ -92,8 +92,9 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
   );
 }
 
-// Gasto por balde (día/semana/mes, según bucketsFor) dentro del rango visible.
-function useExpenseTrend() {
+// Monto por balde (día/semana/mes, según bucketsFor) dentro del rango visible,
+// para el tipo (gasto/ingreso) que esté en foco.
+function useTrend(focus: TxType) {
   const { visibleTx, range } = useStore();
   return useMemo(() => {
     const buckets = bucketsFor(range);
@@ -101,11 +102,11 @@ function useExpenseTrend() {
       key: b.key,
       label: b.label,
       value: visibleTx.reduce(
-        (sum, t) => (t.type === "expense" && t.date >= b.start && t.date <= b.end ? sum + t.amount : sum),
+        (sum, t) => (t.type === focus && t.date >= b.start && t.date <= b.end ? sum + t.amount : sum),
         0
       ),
     }));
-  }, [visibleTx, range]);
+  }, [visibleTx, range, focus]);
 }
 
 function StatTile({ label, value, color = "var(--text)" }: { label: string; value: string; color?: string }) {
@@ -118,10 +119,14 @@ function StatTile({ label, value, color = "var(--text)" }: { label: string; valu
 }
 
 // Comparativa contra el período anterior equivalente + promedio diario, y
-// proyección a fin de mes cuando el rango elegido es el mes en curso.
+// proyección a fin de mes cuando el rango elegido es el mes en curso. Todo
+// sobre el monto del tipo (gasto/ingreso) en foco.
 function ComparativeStats() {
-  const { totals, prevTotals, prevRange, range, period, currency } = useStore();
+  const { totals, prevTotals, prevRange, range, period, currency, focus } = useStore();
   const days = daysBetween(range.start, range.end);
+  const isExpense = focus === "expense";
+  const focusTotal = totals[focus];
+  const prevFocusTotal = prevTotals[focus];
 
   // El promedio se calcula sobre los días YA transcurridos del rango, no sobre
   // su largo total: si no, en el mes en curso se divide por 31 desde el día 1 y
@@ -129,7 +134,7 @@ function ComparativeStats() {
   const now = new Date();
   const effectiveEnd = range.end > now ? now : range.end;
   const elapsedDays = Math.min(Math.max(daysBetween(range.start, effectiveEnd), 1), days);
-  const avgPerDay = totals.expense / elapsedDays;
+  const avgPerDay = focusTotal / elapsedDays;
 
   const isCurrentMonth =
     range.start.getDate() === 1 &&
@@ -138,34 +143,39 @@ function ComparativeStats() {
   const daysInThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const projection = isCurrentMonth ? avgPerDay * daysInThisMonth : null;
 
-  const deltaPct = prevTotals.expense > 0 ? ((totals.expense - prevTotals.expense) / prevTotals.expense) * 100 : null;
-  const down = deltaPct !== null && deltaPct < 0;
+  const deltaPct = prevFocusTotal > 0 ? ((focusTotal - prevFocusTotal) / prevFocusTotal) * 100 : null;
+  // Para gasto, bajar es bueno (verde); para ingreso, subir es bueno (verde) — signo invertido.
+  const good = deltaPct !== null && (isExpense ? deltaPct < 0 : deltaPct > 0);
 
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {deltaPct !== null && (
         <StatTile
           label={`vs ${formatRangeLabel(prevRange, period)}`}
-          color={down ? "var(--green-700)" : "var(--red-600)"}
+          color={good ? "var(--green-700)" : "var(--red-600)"}
           value={`${Math.abs(Math.round(deltaPct))}%`}
         />
       )}
       <StatTile label="Promedio / día" value={fmt(avgPerDay, currency)} />
-      {projection !== null && <StatTile label="Proyección fin de mes" value={fmt(projection, currency)} />}
+      {projection !== null && (
+        <StatTile label={isExpense ? "Proyección fin de mes" : "Proyección de ingresos"} value={fmt(projection, currency)} />
+      )}
     </div>
   );
 }
 
 function TrendSection() {
-  const trend = useExpenseTrend();
+  const { focus } = useStore();
+  const isExpense = focus === "expense";
+  const trend = useTrend(focus);
   const total = trend.reduce((s, d) => s + d.value, 0);
   if (total <= 0) return null;
   return (
     <div style={{ background: "var(--surface)", borderRadius: 16, padding: "14px 14px 8px", boxShadow: "var(--shadow-card)" }}>
       <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon name="ChartColumn" size={13} stroke={2.4} color="var(--text-3)" /> Tendencia de gasto
+        <Icon name="ChartColumn" size={13} stroke={2.4} color="var(--text-3)" /> {isExpense ? "Tendencia de gasto" : "Tendencia de ingresos"}
       </div>
-      <TrendBars data={trend} />
+      <TrendBars data={trend} color={isExpense ? "var(--red)" : "var(--green)"} />
     </div>
   );
 }
@@ -185,13 +195,26 @@ function SaldoBar() {
 }
 
 export function DashboardMobile() {
-  const { dashStyle, sim, setSim, breakdown, visibleTx, currency, budgets, range } = useStore();
-  const showBudgets = isFullMonthRange(range);
+  const { dashStyle, sim, setSim, breakdown, visibleTx, currency, budgets, range, focus, loadError } = useStore();
+  const showBudgets = focus === "expense" && isFullMonthRange(range);
   let body;
-  if (sim === "loading") body = <StateView kind="loading" />;
+  if (loadError) body = <StateView kind="error" onRetry={() => window.location.reload()} />;
+  else if (sim === "loading") body = <StateView kind="loading" />;
   else if (sim === "error") body = <StateView kind="error" onRetry={() => setSim("normal")} />;
   else if (sim === "empty" || visibleTx.length === 0) body = <StateView kind="empty" />;
-  else if (dashStyle === "A") {
+  else if (breakdown.length === 0) {
+    body = (
+      <StateView
+        kind="empty"
+        title={focus === "income" ? "Sin ingresos" : "Sin gastos"}
+        message={
+          focus === "income"
+            ? "No registraste ingresos en este período. Probá con otro rango."
+            : "No registraste gastos en este período. Probá con otro rango."
+        }
+      />
+    );
+  } else if (dashStyle === "A") {
     body = (
       <div style={{ display: "grid", placeItems: "center", height: "100%" }}>
         <Ring size={332} donutSize={196} thickness={22} />
@@ -256,8 +279,9 @@ export function DashboardMobile() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "6px 18px 10px", display: "flex", flexDirection: "column", gap: 12, flex: "0 0 auto" }}>
+      <div style={{ padding: "6px 18px 10px", display: "flex", flexDirection: "column", gap: 10, flex: "0 0 auto" }}>
         <div style={{ display: "flex", justifyContent: "center" }}><PeriodPills /></div>
+        <div style={{ display: "flex", justifyContent: "center" }}><FocusToggle size="sm" /></div>
         <RangeNav />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>{body}</div>
@@ -271,12 +295,25 @@ export function DashboardMobile() {
 }
 
 export function DashboardDesktop() {
-  const { breakdown, sim, setSim, visibleTx } = useStore();
+  const { breakdown, sim, setSim, visibleTx, focus, loadError } = useStore();
   let center;
-  if (sim === "loading") center = <StateView kind="loading" />;
+  if (loadError) center = <StateView kind="error" onRetry={() => window.location.reload()} />;
+  else if (sim === "loading") center = <StateView kind="loading" />;
   else if (sim === "error") center = <StateView kind="error" onRetry={() => setSim("normal")} />;
   else if (sim === "empty" || visibleTx.length === 0) center = <StateView kind="empty" />;
-  else
+  else if (breakdown.length === 0) {
+    center = (
+      <StateView
+        kind="empty"
+        title={focus === "income" ? "Sin ingresos" : "Sin gastos"}
+        message={
+          focus === "income"
+            ? "No registraste ingresos en este período. Probá con otro rango."
+            : "No registraste gastos en este período. Probá con otro rango."
+        }
+      />
+    );
+  } else
     center = (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 56, flexWrap: "wrap", height: "100%" }}>
         <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={300} thickness={32}>
@@ -287,12 +324,15 @@ export function DashboardDesktop() {
         </div>
       </div>
     );
-  const showStats = !(sim === "loading" || sim === "error" || sim === "empty" || visibleTx.length === 0);
+  const showStats = !(loadError || sim === "loading" || sim === "error" || sim === "empty" || visibleTx.length === 0 || breakdown.length === 0);
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "26px 32px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
         <RangeNav center={false} />
-        <PeriodPills />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <FocusToggle />
+          <PeriodPills />
+        </div>
       </div>
       {showStats && (
         <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 18, flexWrap: "wrap" }}>

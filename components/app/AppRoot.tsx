@@ -38,11 +38,13 @@ export function AppRoot({
   transactions,
   subscriptions,
   year,
+  loadError,
 }: {
   categories: Category[];
   transactions: Transaction[];
   subscriptions?: Subscription[];
   year: number;
+  loadError?: boolean;
 }) {
   return (
     <StoreProvider
@@ -50,6 +52,7 @@ export function AppRoot({
       initialTransactions={transactions}
       initialSubscriptions={subscriptions}
       initialYear={year}
+      initialLoadError={loadError}
     >
       <Shell />
       <Toast />

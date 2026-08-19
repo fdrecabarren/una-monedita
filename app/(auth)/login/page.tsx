@@ -48,16 +48,35 @@ export default function LoginPage() {
       className="app-root"
       data-theme="light"
       data-accent="verde"
-      style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "var(--bg)" }}
+      style={{ position: "relative", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16, background: "var(--bg)", overflow: "hidden" }}
     >
-      <div style={{ width: "100%", maxWidth: 360 }}>
-        <div style={{ textAlign: "center", marginBottom: 40 }}>
+      <img
+        src="/bg-login.webp"
+        alt=""
+        aria-hidden="true"
+        style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center" }}
+      />
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 380,
+          background: "color-mix(in srgb, var(--surface) 88%, transparent)",
+          backdropFilter: "blur(18px)",
+          WebkitBackdropFilter: "blur(18px)",
+          border: "1px solid color-mix(in srgb, var(--line) 70%, transparent)",
+          borderRadius: 24,
+          padding: "36px 28px 28px",
+          boxShadow: "var(--shadow-modal)",
+        }}
+      >
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
           <img
             src="/logo.png"
             alt="UnaMonedita"
-            width={56}
-            height={56}
-            style={{ display: "inline-block", width: 56, height: 56, borderRadius: 15, marginBottom: 16, boxShadow: "var(--shadow-fab)", objectFit: "cover" }}
+            width={60}
+            height={60}
+            style={{ display: "inline-block", width: 60, height: 60, borderRadius: 16, marginBottom: 16, boxShadow: "var(--shadow-fab)", objectFit: "cover" }}
           />
           <h1 className="num" style={{ fontSize: 28, fontWeight: 600, color: "var(--text)", marginBottom: 2 }}>UnaMonedita</h1>
           <p style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 600 }}>Finanzas personales</p>

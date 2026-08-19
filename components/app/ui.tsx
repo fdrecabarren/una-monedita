@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useStore, type Period } from "./store";
+import { useStore, type Period, type TxType } from "./store";
 import { Icon } from "./Icon";
 import { RangeModal } from "./modal-range";
 import { fmt } from "@/lib/format";
@@ -101,7 +101,8 @@ export function RangeNav({ center = true }: { center?: boolean }) {
 }
 
 export function CenterBalance({ scale = 1 }: { scale?: number }) {
-  const { totals, currency } = useStore();
+  const { totals, currency, focus } = useStore();
+  const isExpense = focus === "expense";
   return (
     <div>
       <div style={{ fontSize: 10.5 * Math.max(scale, 0.9), fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-3)" }}>
@@ -110,8 +111,8 @@ export function CenterBalance({ scale = 1 }: { scale?: number }) {
       <div className="num" style={{ fontSize: 34 * scale, fontWeight: 600, lineHeight: 1.04, color: "var(--text)", marginTop: 2 }}>
         {fmt(totals.balance, currency)}
       </div>
-      <div className="num tnum" style={{ fontSize: 14.5 * scale, fontWeight: 600, color: "var(--red)", marginTop: 4 }}>
-        − {fmt(totals.expense, currency)}
+      <div className="num tnum" style={{ fontSize: 14.5 * scale, fontWeight: 600, color: isExpense ? "var(--red)" : "var(--green)", marginTop: 4 }}>
+        {isExpense ? "− " : "+ "}{fmt(isExpense ? totals.expense : totals.income, currency)}
       </div>
     </div>
   );
@@ -183,7 +184,60 @@ export function Segmented<T extends string>({
   );
 }
 
-export function StateView({ kind, onRetry }: { kind: "loading" | "empty" | "error"; onRetry?: () => void }) {
+// FocusToggle: alterna el foco del Resumen entre Gastos e Ingresos. La pastilla
+// activa toma el color semántico del tipo (rojo gasto / verde ingreso) para que
+// se lea de un vistazo, a diferencia de PeriodPills que siempre usa el acento.
+export function FocusToggle({ size = "md" }: { size?: "sm" | "md" }) {
+  const { focus, setFocus } = useStore();
+  const pad = size === "sm" ? "5px 11px" : "7px 15px";
+  const fs = size === "sm" ? 12.5 : 13.5;
+  const items: { value: TxType; label: string; color: string }[] = [
+    { value: "expense", label: "Gastos", color: "var(--red)" },
+    { value: "income", label: "Ingresos", color: "var(--green)" },
+  ];
+  return (
+    <div style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999 }}>
+      {items.map((it) => {
+        const on = it.value === focus;
+        return (
+          <button
+            key={it.value}
+            onClick={() => setFocus(it.value)}
+            style={{
+              padding: pad,
+              borderRadius: 999,
+              fontSize: fs,
+              fontWeight: 700,
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              color: on ? "var(--on-accent)" : "var(--text-2)",
+              background: on ? it.color : "transparent",
+              boxShadow: on ? "var(--shadow-fab)" : "none",
+              transition: "background .15s, color .15s",
+            }}
+          >
+            {it.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function StateView({
+  kind,
+  onRetry,
+  title,
+  message,
+  action,
+}: {
+  kind: "loading" | "empty" | "error";
+  onRetry?: () => void;
+  title?: string;
+  message?: string;
+  action?: { label: string; onClick: () => void };
+}) {
   if (kind === "loading") {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, gap: 18, height: "100%" }}>
@@ -201,16 +255,17 @@ export function StateView({ kind, onRetry }: { kind: "loading" | "empty" | "erro
     error: { icon: "CloudOff", title: "No se pudo cargar", body: "Hubo un problema al traer tus datos. Revisá la conexión e intentá de nuevo." },
   };
   const s = map[kind] || map.empty;
+  const primaryAction = kind === "error" ? { label: "Reintentar", onClick: onRetry ?? (() => {}) } : action;
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 32px", gap: 14, textAlign: "center", height: "100%" }}>
       <div style={{ width: 76, height: 76, borderRadius: "50%", display: "grid", placeItems: "center", background: "var(--bg-2)", color: "var(--text-3)" }}>
         <Icon name={s.icon} size={34} stroke={1.8} color="var(--text-3)" />
       </div>
-      <div style={{ fontWeight: 800, fontSize: 18 }}>{s.title}</div>
-      <div style={{ color: "var(--text-2)", fontSize: 14.5, maxWidth: 300, lineHeight: 1.5 }}>{s.body}</div>
-      {kind === "error" && (
+      <div style={{ fontWeight: 800, fontSize: 18 }}>{title ?? s.title}</div>
+      <div style={{ color: "var(--text-2)", fontSize: 14.5, maxWidth: 300, lineHeight: 1.5 }}>{message ?? s.body}</div>
+      {primaryAction && (
         <button
-          onClick={onRetry}
+          onClick={primaryAction.onClick}
           style={{
             marginTop: 6,
             padding: "10px 20px",
@@ -224,7 +279,7 @@ export function StateView({ kind, onRetry }: { kind: "loading" | "empty" | "erro
             fontSize: 14,
           }}
         >
-          Reintentar
+          {primaryAction.label}
         </button>
       )}
     </div>

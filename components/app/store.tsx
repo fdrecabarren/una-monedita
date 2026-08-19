@@ -26,6 +26,7 @@ import {
   toISO,
   parseDate,
 } from "@/lib/date-range";
+import { type TxFilter, EMPTY_TX_FILTER } from "@/lib/tx-filter";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -132,9 +133,14 @@ interface StoreValue {
   setAccent: (a: Accent) => void;
   currency: AppCurrency;
   setCurrency: (c: AppCurrency) => void;
+  focus: TxType;
+  setFocus: (f: TxType) => void;
+  txFilter: TxFilter;
+  setTxFilter: (f: TxFilter) => void;
   sim: Sim;
   setSim: (s: Sim) => void;
   loading: boolean;
+  loadError: boolean;
   notice: string | null;
   screen: Screen;
   setScreen: (s: Screen) => void;
@@ -257,6 +263,7 @@ export function StoreProvider({
   initialTransactions,
   initialSubscriptions,
   initialYear,
+  initialLoadError,
   mode,
 }: {
   children: ReactNode;
@@ -264,6 +271,9 @@ export function StoreProvider({
   initialTransactions: Transaction[];
   initialSubscriptions?: Subscription[];
   initialYear: number;
+  // El fetch del servidor falló (Notion caído, token inválido, red). Distinto de
+  // "no hay datos": sin esto un 401 se dibuja como "no tenés movimientos".
+  initialLoadError?: boolean;
   mode?: "mobile" | "desktop";
 }) {
   const [categories, setCategories] = useState<UICategory[]>(() =>
@@ -303,7 +313,13 @@ export function StoreProvider({
   const [dashStyle, setDashStyleRaw] = useState<DashStyle>("A");
   const [accent, setAccentRaw] = useState<Accent>("verde");
   const [currency, setCurrencyRaw] = useState<AppCurrency>("EUR");
+  const [focus, setFocusRaw] = useState<TxType>("expense");
+  // Filtro de Movimientos (tipo + categorías). A propósito NO persiste en
+  // localStorage: un filtro que sobrevive al reload y esconde movimientos es
+  // una trampa de UX ("¿dónde están mis datos?"). Se resetea al recargar.
+  const [txFilter, setTxFilter] = useState<TxFilter>(EMPTY_TX_FILTER);
   const [sim, setSim] = useState<Sim>("normal");
+  const loadError = !!initialLoadError;
   const [screen, setScreen] = useState<Screen>("dashboard");
 
   // hydrate prefs from localStorage (external store) — client only, runs once.
@@ -312,12 +328,14 @@ export function StoreProvider({
     const d = (localStorage.getItem("um.dash") as DashStyle) || "A";
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
+    const f = (localStorage.getItem("um.focus") as TxType) || "expense";
     const p = (localStorage.getItem("um.period") as Period) || "Mes";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from localStorage on mount
     setThemeRaw(t);
     setDashStyleRaw(d);
     setAccentRaw(a);
     setCurrencyRaw(c);
+    setFocusRaw(f);
     if (p === "Personalizado") {
       const rs = localStorage.getItem("um.rangeStart");
       const re = localStorage.getItem("um.rangeEnd");
@@ -346,6 +364,10 @@ export function StoreProvider({
   const setCurrency = useCallback((v: AppCurrency) => {
     setCurrencyRaw(v);
     persist("um.currency", v);
+  }, []);
+  const setFocus = useCallback((v: TxType) => {
+    setFocusRaw(v);
+    persist("um.focus", v);
   }, []);
 
   const setPeriod = useCallback((p: Period) => {
@@ -542,7 +564,7 @@ export function StoreProvider({
     const totals: Record<string, number> = {};
     let grand = 0;
     visibleTx.forEach((x) => {
-      if (!x.cat || !byId[x.cat] || byId[x.cat].type !== "expense") return;
+      if (!x.cat || !byId[x.cat] || byId[x.cat].type !== focus) return;
       totals[x.cat] = (totals[x.cat] || 0) + x.amount;
       grand += x.amount;
     });
@@ -556,7 +578,7 @@ export function StoreProvider({
         pct: grand ? total / grand : 0,
       }))
       .sort((a, b) => b.total - a.total);
-  }, [visibleTx, byId]);
+  }, [visibleTx, byId, focus]);
 
   const totals = useMemo(() => {
     let income = 0;
@@ -868,9 +890,14 @@ export function StoreProvider({
     setAccent,
     currency,
     setCurrency,
+    focus,
+    setFocus,
+    txFilter,
+    setTxFilter,
     sim,
     setSim,
     loading,
+    loadError,
     notice,
     screen,
     setScreen,
