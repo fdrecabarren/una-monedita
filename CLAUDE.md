@@ -170,6 +170,28 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 
 ## Vercel deployment — caveats
 
+### CUENTA DE DESPLIEGUE — regla dura
+
+Esta app se despliega **SOLO** en la cuenta Vercel del dueño:
+
+- **Panel:** https://vercel.com/franco-s-projects02
+- **Team:** `franco-s-projects02` (`orgId: team_toBMZPWU7E3BymiNs85vb7l4`)
+- **Proyecto:** `una-monedita` (`projectId: prj_KtMp6hZWEoPSIcVIKI1kiEZuIEsz`)
+- **Usuario:** `francorecabarren-8052`
+
+**Nunca** desplegar en otra cuenta, team o scope, ni siquiera si hay otra sesión
+de Vercel activa de otro proyecto en esta máquina. Antes de cualquier deploy,
+verificar el scope activo con `npx vercel whoami` y confirmar que
+`.vercel/project.json` tiene el `orgId` y `projectId` de arriba. Si no coinciden,
+**parar y preguntar** — no relinkear ni crear un proyecto nuevo por tu cuenta.
+
+Mismo criterio para GitHub: el repo es `fdrecabarren/una-monedita`. En esta
+máquina hay varias cuentas en `gh` y la activa suele ser otra
+(`adamantiumagency-bit`), lo que hace fallar el push con 403. Cambiar con
+`gh auth switch --user fdrecabarren`.
+
+### Otros caveats
+
 - Alias real de producción: **una-monedita-three.vercel.app** (NO `una-monedita.vercel.app` — ese es un proyecto viejo/duplicado en otra cuenta, ignorar).
 - Para set/re-set env en Vercel: `echo 'valor' | npx vercel env add NAME production`. Usar `echo` (con newline). `printf '%s'` sin newline deja la var vacía.
 - `vercel env pull` siempre devuelve `""` para vars custom (son Sensitive) — no sirve para verificar valores. Verificar via runtime/logs de Vercel.
