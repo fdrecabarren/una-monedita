@@ -44,7 +44,6 @@ Tus datos viven solo en tu Notion y tu Vercel. Nadie más los ve.
    |----------|-------|
    | `APP_PASSWORD` | Tu contraseña para entrar a la app |
    | `AUTH_COOKIE_SECRET` | Texto aleatorio de 32+ caracteres |
-   | `CRON_SECRET` | Texto aleatorio (cualquiera) |
 
    Para generar texto aleatorio: en una terminal corre `openssl rand -base64 32`,
    o usa cualquier generador de contraseñas largas.

@@ -7,14 +7,19 @@ import { z } from "zod";
 
 export const dynamic = "force-dynamic";
 
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+
 const BodySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  date: z.string().regex(ISO), // obligatoria: la elige el usuario en el modal
+  expectedNext: z.string().regex(ISO).nullable(), // NextChargeDate que vio el cliente
   amount: z.number().positive().optional(),
+  categoryId: z.string().optional(),
+  notes: z.string().max(500).optional(),
 });
 
-// Manual "Pagar" button: registers a Transaction for this subscription right
-// now (or on a given date/amount) and advances NextChargeDate. Same charging
-// logic the cron uses for AutoCreate items — see lib/notion/payments.ts.
+// Botón "Confirmar" de un fijo: registra una Transaction con la fecha que
+// eligió el usuario y avanza NextChargeDate un período. No hay cron ni modo
+// automático — toda confirmación pasa por acá.
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -26,8 +31,9 @@ export async function POST(
   }
 
   const { id } = await params;
-  const body = await request.json().catch(() => ({}));
-  const parsed = BodySchema.safeParse(body ?? {});
+  const body = await request.json().catch(() => null);
+  if (body === null) return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
+  const parsed = BodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
@@ -35,6 +41,19 @@ export async function POST(
   const sub = await getSubscriptionById(id, creds);
   if (!sub) return NextResponse.json({ error: "Recurrente no encontrado" }, { status: 404 });
 
-  const result = await chargeSubscription(sub, parsed.data, creds);
-  return NextResponse.json(result, { status: 201 });
+  if (sub.status !== "Activa") {
+    return NextResponse.json({ error: "El fijo no está activo", subscription: sub }, { status: 409 });
+  }
+  const currentNext = sub.nextChargeDate?.slice(0, 10) ?? null;
+  if (currentNext !== parsed.data.expectedNext) {
+    return NextResponse.json({ error: "Este fijo ya se confirmó", subscription: sub }, { status: 409 });
+  }
+
+  try {
+    const result = await chargeSubscription(sub, parsed.data, creds);
+    return NextResponse.json(result, { status: 201 });
+  } catch (err) {
+    console.error("[subscriptions/pay] chargeSubscription failed:", err);
+    return NextResponse.json({ error: "No se pudo registrar en Notion" }, { status: 502 });
+  }
 }
