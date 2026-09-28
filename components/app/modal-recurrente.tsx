@@ -4,7 +4,8 @@ import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useStore, type UISub, type TxType, type NewSubInput } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Segmented } from "./ui";
-import { firstChargeDate } from "@/lib/recurrence";
+import { firstChargeDate, withDueDay, todayISO } from "@/lib/recurrence";
+import { fmtDayMonth } from "@/lib/format";
 import type { Frequency } from "@/lib/notion/schemas";
 
 export type EditTarget = UISub | { type: TxType } | null;
@@ -94,27 +95,39 @@ export function SubEditor({
   const [frequency, setFrequency] = useState<Frequency>(existing?.frequency ?? "Mensual");
   const [customIntervalDays, setCustomIntervalDays] = useState(existing?.customIntervalDays ? String(existing.customIntervalDays) : "30");
   const [dueDay, setDueDay] = useState(existing?.dueDay ? String(existing.dueDay) : "");
-  const [startDate, setStartDate] = useState(existing?.startDate ?? new Date().toISOString().slice(0, 10));
-  const [nextChargeDate, setNextChargeDate] = useState(
-    existing?.nextChargeDate ??
-      firstChargeDate(existing?.startDate ?? new Date().toISOString().slice(0, 10), frequency, undefined, undefined)
-  );
+  const [startDate, setStartDate] = useState(existing?.startDate ?? todayISO());
+  // Próximo cobro: para un fijo nuevo se deriva en vivo del inicio/día del mes
+  // mientras el usuario no la toque a mano (nextTouched); un fijo existente ya
+  // arranca "tocado" — su fecha nunca se recalcula sola por cambiar frecuencia
+  // o inicio (eso fue lo que rompía Alquiler). Cambiar el día del mes sí la
+  // retarget-ea (ver handleDueDayChange), manteniendo el mismo mes/histórico.
+  const [nextTouched, setNextTouched] = useState(!!existing);
+  const [nextChargeDate, setNextChargeDate] = useState(existing?.nextChargeDate ?? "");
   const [alertDaysBefore, setAlertDaysBefore] = useState(existing ? String(existing.alertDaysBefore) : "3");
-  const [autoCreate, setAutoCreate] = useState<"on" | "off">(existing?.autoCreate ? "on" : "off");
   const [notes, setNotes] = useState(existing?.notes ?? "");
   const [busy, setBusy] = useState(false);
 
   const cats = useMemo(() => categories.filter((c) => c.type === type), [categories, type]);
 
-  function recalcNextCharge() {
-    setNextChargeDate(
-      firstChargeDate(
-        startDate,
-        frequency,
-        frequency === "Personalizada" ? Number(customIntervalDays) || 30 : undefined,
-        HAS_DUE_DAY.includes(frequency) && dueDay ? Number(dueDay) : undefined
-      )
-    );
+  const derivedFirstCharge = firstChargeDate(
+    startDate,
+    frequency,
+    frequency === "Personalizada" ? Number(customIntervalDays) || 30 : undefined,
+    HAS_DUE_DAY.includes(frequency) && dueDay ? Number(dueDay) : undefined
+  );
+  const effectiveNext = nextTouched && nextChargeDate ? nextChargeDate : derivedFirstCharge;
+
+  function handleDueDayChange(v: string) {
+    setDueDay(v);
+    // Fijo existente + frecuencia con día del mes: retarget-ea el próximo
+    // cobro al nuevo día dentro del mismo mes (ej. Claude 10/09 → 26/09), sin
+    // perder el historial de cobros ya hechos.
+    if (existing && HAS_DUE_DAY.includes(frequency) && nextChargeDate) {
+      const n = parseInt(v, 10);
+      if (Number.isInteger(n) && n >= 1 && n <= 31) {
+        setNextChargeDate(withDueDay(nextChargeDate, n));
+      }
+    }
   }
 
   async function save() {
@@ -132,9 +145,8 @@ export function SubEditor({
         customIntervalDays: frequency === "Personalizada" ? Number(customIntervalDays) || 30 : undefined,
         dueDay: HAS_DUE_DAY.includes(frequency) && dueDay ? Number(dueDay) : undefined,
         startDate,
-        nextChargeDate,
+        nextChargeDate: effectiveNext,
         alertDaysBefore: Number(alertDaysBefore) || 0,
-        autoCreate: autoCreate === "on",
         cat: catId,
         notes: notes.trim(),
       };
@@ -256,7 +268,7 @@ export function SubEditor({
 
           {HAS_DUE_DAY.includes(frequency) && (
             <Field label="Día del mes (aprox.)">
-              <input type="number" min={1} max={31} value={dueDay} onChange={(e) => setDueDay(e.target.value)} placeholder="Ej: 14" style={inputStyle} />
+              <input type="number" min={1} max={31} value={dueDay} onChange={(e) => handleDueDayChange(e.target.value)} placeholder="Ej: 14" style={inputStyle} />
               <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.4 }}>
                 Si el mes no tiene ese día (ej. 31 en febrero), se cobra el último día del mes.
               </div>
@@ -268,30 +280,21 @@ export function SubEditor({
           </Field>
 
           <Field label="Próximo cobro">
-            <div style={{ display: "flex", gap: 8 }}>
-              <input type="date" value={nextChargeDate} onChange={(e) => setNextChargeDate(e.target.value)} style={{ ...inputStyle, flex: 1, minWidth: 0 }} />
-              <button
-                type="button"
-                onClick={recalcNextCharge}
-                title="Recalcular desde la fecha de inicio"
-                className="icon-btn"
-                style={{ width: 44, height: 44, borderRadius: 12, background: "var(--bg-2)", flex: "0 0 auto" }}
-              >
-                <Icon name="Repeat" size={18} stroke={2.2} color="var(--text-2)" />
-              </button>
-            </div>
-          </Field>
-
-          <Field label="Registro automático">
-            <Segmented
-              value={autoCreate}
-              onChange={setAutoCreate}
-              options={[{ value: "on", label: "Automático" }, { value: "off", label: "Confirmar manual" }]}
+            <input
+              type="date"
+              value={effectiveNext}
+              onChange={(e) => {
+                setNextChargeDate(e.target.value);
+                setNextTouched(true);
+              }}
+              style={inputStyle}
             />
             <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.4 }}>
-              {autoCreate === "on"
-                ? "Se registra solo en la fecha de cobro."
-                : "Aparece en “Por pagar” hasta que confirmes."}
+              {existing
+                ? existing.lastChargedDate
+                  ? `Último registro: ${fmtDayMonth(existing.lastChargedDate)}`
+                  : "Todavía no se registró ninguno"
+                : "Se calcula con el día del mes y el inicio. Podés cambiarla."}
             </div>
           </Field>
 

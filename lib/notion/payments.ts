@@ -1,11 +1,11 @@
-// Shared "charge a recurring subscription" logic — used by both the manual
-// pay button (app/api/subscriptions/[id]/pay) and the daily cron
-// (app/api/cron/subscriptions). Keeping this in one place avoids the two
-// call sites drifting on how a subscription advances after being charged.
+// Shared "confirm a fijo" logic — used by the manual confirm button
+// (app/api/subscriptions/[id]/pay). Confirmation is always user-initiated:
+// no cron, no automatic mode. Keeping this in one place avoids drift if more
+// call sites appear later.
 import type { NotionCreds } from "@/lib/auth/session";
-import { createTransaction } from "./transactions";
+import { createTransaction, deleteTransaction } from "./transactions";
 import { updateSubscription } from "./subscriptions";
-import { nextChargeAfter, todayISO } from "@/lib/recurrence";
+import { addInterval } from "@/lib/recurrence";
 import type { Subscription, Transaction } from "./schemas";
 
 export interface ChargeResult {
@@ -13,43 +13,49 @@ export interface ChargeResult {
   transaction: Transaction;
 }
 
-// Charges `sub` on `date` (default: today) for `amount` (default: sub.amount),
-// creates the corresponding Transaction linked via `subscriptionId`, advances
-// NextChargeDate/LastChargedDate, and auto-cancels if EndDate has passed.
+// Confirms `sub` for the period covered by its current NextChargeDate,
+// registering the Transaction on the date the user chose (`opts.date`).
+// Advances exactly one period from the covered due date (not from the
+// payment date) — if several periods are overdue, each must be confirmed
+// separately and the fijo stays in "Por pagar" in between. Auto-cancels if
+// EndDate has passed.
 export async function chargeSubscription(
   sub: Subscription,
-  opts: { date?: string; amount?: number } = {},
+  opts: { date: string; amount?: number; categoryId?: string; notes?: string },
   creds?: NotionCreds
 ): Promise<ChargeResult> {
-  const date = opts.date ?? todayISO();
-  const amount = opts.amount ?? sub.amount;
+  const covered = (sub.nextChargeDate ?? opts.date).slice(0, 10);
+  const nextChargeDate = addInterval(covered, sub.frequency, sub.customIntervalDays, sub.dueDay);
+  const pastEnd = !!sub.endDate && nextChargeDate > sub.endDate.slice(0, 10);
 
   const transaction = await createTransaction(
     {
       type: sub.type === "Ingreso" ? "Ingreso" : "Gasto",
-      amount,
+      amount: opts.amount ?? sub.amount,
       currency: sub.currency ?? "ARS",
-      date,
+      date: opts.date,
       accountId: sub.accountId ?? undefined,
-      categoryId: sub.categoryId ?? undefined,
+      categoryId: opts.categoryId ?? sub.categoryId ?? undefined,
       subscriptionId: sub.id,
-      notes: sub.name,
+      notes: opts.notes ?? sub.name,
     },
     creds
   );
 
-  const nextChargeDate = nextChargeAfter(sub, date);
-  const pastEnd = !!sub.endDate && nextChargeDate > sub.endDate;
-
-  const updated = await updateSubscription(
-    sub.id,
-    {
-      lastChargedDate: date,
-      nextChargeDate,
-      ...(pastEnd ? { status: "Cancelada" as const } : {}),
-    },
-    creds
-  );
-
-  return { subscription: updated, transaction };
+  try {
+    const updated = await updateSubscription(
+      sub.id,
+      {
+        lastChargedDate: opts.date,
+        nextChargeDate,
+        ...(pastEnd ? { status: "Cancelada" as const } : {}),
+      },
+      creds
+    );
+    return { subscription: updated, transaction };
+  } catch (err) {
+    // Compensar: sin esto un reintento duplicaría el gasto.
+    await deleteTransaction(transaction.id, creds).catch(() => {});
+    throw err;
+  }
 }

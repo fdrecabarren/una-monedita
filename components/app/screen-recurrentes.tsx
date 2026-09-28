@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useStore, type UISub, type TxType } from "./store";
 import { CatBubble, Icon } from "./Icon";
-import { fmt } from "@/lib/format";
+import { fmt, fmtDayMonth } from "@/lib/format";
 import { monthlyEquivalent, todayISO } from "@/lib/recurrence";
 import { SubEditor, type EditTarget } from "./modal-recurrente";
 
@@ -21,19 +21,17 @@ function dueLabel(dateISO: string, today: string): string {
   const diff = Math.round((new Date(y, m - 1, d).getTime() - new Date(ty, tm - 1, td).getTime()) / 86_400_000);
   if (diff === 1) return "Mañana";
   if (diff <= 6) return `En ${diff} días`;
-  return new Date(y, m - 1, d).toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+  return fmtDayMonth(dateISO);
 }
 
 function SubCard({
   sub,
   onEdit,
-  onPay,
-  busy,
+  onConfirm,
 }: {
   sub: UISub;
   onEdit: () => void;
-  onPay: () => void;
-  busy: boolean;
+  onConfirm: () => void;
 }) {
   const { byId } = useStore();
   const cat = sub.cat ? byId[sub.cat] : null;
@@ -78,10 +76,10 @@ function SubCard({
       </button>
       {sub.status === "Activa" && (
         <button
-          onClick={onPay}
-          disabled={busy}
+          onClick={onConfirm}
           className="icon-btn"
-          title="Pagar ahora"
+          title="Confirmar"
+          aria-label="Confirmar"
           style={{ width: 40, height: 40, borderRadius: 12, background: "var(--green-soft)", flex: "0 0 auto" }}
         >
           <Icon name="Check" size={19} stroke={2.4} color="var(--green-700)" />
@@ -91,12 +89,11 @@ function SubCard({
   );
 }
 
-function Section({ title, subs, onEdit, onPay, busyId }: {
+function Section({ title, subs, onEdit, onConfirm }: {
   title: string;
   subs: UISub[];
   onEdit: (s: UISub) => void;
-  onPay: (s: UISub) => void;
-  busyId: string | null;
+  onConfirm: (s: UISub) => void;
 }) {
   if (subs.length === 0) return null;
   return (
@@ -106,7 +103,7 @@ function Section({ title, subs, onEdit, onPay, busyId }: {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
         {subs.map((s) => (
-          <SubCard key={s.id} sub={s} onEdit={() => onEdit(s)} onPay={() => onPay(s)} busy={busyId === s.id} />
+          <SubCard key={s.id} sub={s} onEdit={() => onEdit(s)} onConfirm={() => onConfirm(s)} />
         ))}
       </div>
     </div>
@@ -114,9 +111,8 @@ function Section({ title, subs, onEdit, onPay, busyId }: {
 }
 
 export function Recurrentes() {
-  const { subscriptions, paySubscription, currency } = useStore();
+  const { subscriptions, openConfirmSub, currency } = useStore();
   const [editing, setEditing] = useState<EditTarget>(null);
-  const [payingId, setPayingId] = useState<string | null>(null);
   const [newType, setNewType] = useState<TxType>("expense");
 
   const today = todayISO();
@@ -144,16 +140,6 @@ export function Recurrentes() {
       .reduce((sum, s) => sum + monthlyEquivalent(s.amount, s), 0);
   }, [subscriptions]);
 
-  async function handlePay(s: UISub) {
-    if (payingId) return;
-    setPayingId(s.id);
-    try {
-      await paySubscription(s.id);
-    } finally {
-      setPayingId(null);
-    }
-  }
-
   return (
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 16px 24px" }}>
       <div style={{ padding: "10px 4px 20px" }}>
@@ -165,9 +151,9 @@ export function Recurrentes() {
         </div>
       </div>
 
-      <Section title="Por pagar" subs={porPagar} onEdit={setEditing} onPay={handlePay} busyId={payingId} />
-      <Section title="Próximos" subs={proximos} onEdit={setEditing} onPay={handlePay} busyId={payingId} />
-      <Section title="Pausados" subs={pausadas} onEdit={setEditing} onPay={handlePay} busyId={payingId} />
+      <Section title="Por pagar" subs={porPagar} onEdit={setEditing} onConfirm={openConfirmSub} />
+      <Section title="Próximos" subs={proximos} onEdit={setEditing} onConfirm={openConfirmSub} />
+      <Section title="Pausados" subs={pausadas} onEdit={setEditing} onConfirm={openConfirmSub} />
 
       {subscriptions.length === 0 && (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "48px 32px", gap: 14, textAlign: "center" }}>
@@ -176,7 +162,7 @@ export function Recurrentes() {
           </div>
           <div style={{ fontWeight: 800, fontSize: 18 }}>Sin gastos fijos</div>
           <div style={{ color: "var(--text-2)", fontSize: 14.5, maxWidth: 300, lineHeight: 1.5 }}>
-            Registrá el gym, suscripciones o dominios y dejá que se avisen o se registren solos.
+            Registrá el gym, suscripciones o dominios y confirmalos cuando los pagues.
           </div>
         </div>
       )}

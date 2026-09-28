@@ -27,6 +27,7 @@ import {
   parseDate,
 } from "@/lib/date-range";
 import { type TxFilter, EMPTY_TX_FILTER } from "@/lib/tx-filter";
+import { addInterval } from "@/lib/recurrence";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -65,7 +66,6 @@ export interface UISub {
   lastChargedDate: string | null;
   endDate: string | null;
   alertDaysBefore: number;
-  autoCreate: boolean;
   status: SubscriptionStatus;
   notes: string;
   cat: string | null;
@@ -96,6 +96,9 @@ interface EntryState {
   kind: TxType;
   date: Date | null;
   edit: UITx | null;
+  // Si viene seteado, el modal está confirmando este fijo (ver
+  // modal-new-entry.tsx): precarga monto/categoría/nota y pide la fecha.
+  sub: UISub | null;
 }
 
 interface BreakdownItem {
@@ -147,6 +150,7 @@ interface StoreValue {
   entry: EntryState;
   openEntry: (kind?: TxType, date?: Date | null) => void;
   openEdit: (tx: UITx) => void;
+  openConfirmSub: (sub: UISub) => void;
   closeEntry: () => void;
   mode?: "mobile" | "desktop";
   addTransaction: (tx: { cat: string; amount: number; date: Date; note: string }) => Promise<void>;
@@ -165,7 +169,10 @@ interface StoreValue {
   addSubscription: (sub: NewSubInput) => Promise<void>;
   updateSubscription: (id: string, patch: Partial<NewSubInput> & { status?: SubscriptionStatus }) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
-  paySubscription: (id: string, opts?: { date?: string; amount?: number }) => Promise<void>;
+  confirmSubscription: (
+    sub: UISub,
+    input: { date: Date; amount: number; cat: string | null; note: string }
+  ) => Promise<void>;
   budgets: UIBudget[];
   setBudget: (categoryId: string, limit: number) => Promise<void>;
 }
@@ -181,7 +188,6 @@ export interface NewSubInput {
   startDate: string;
   nextChargeDate?: string;
   alertDaysBefore: number;
-  autoCreate: boolean;
   cat: string | null;
   notes: string;
 }
@@ -229,7 +235,6 @@ function subToUI(s: Subscription): UISub {
     lastChargedDate: s.lastChargedDate,
     endDate: s.endDate,
     alertDaysBefore: s.alertDaysBefore,
-    autoCreate: s.autoCreate,
     status: s.status ?? "Activa",
     notes: s.notes ?? "",
     cat: s.categoryId,
@@ -422,16 +427,20 @@ export function StoreProvider({
     kind: "expense",
     date: null,
     edit: null,
+    sub: null,
   });
   const openEntry = useCallback(
     (kind?: TxType, date?: Date | null) =>
-      setEntry({ open: true, kind: kind || "expense", date: date || null, edit: null }),
+      setEntry({ open: true, kind: kind || "expense", date: date || null, edit: null, sub: null }),
     []
   );
   const openEdit = useCallback((tx: UITx) => {
     // tx optimista aún sin id real de Notion: no se puede editar/borrar todavía
     if (tx.id.startsWith("tmp-")) return;
-    setEntry({ open: true, kind: tx.type, date: tx.date, edit: tx });
+    setEntry({ open: true, kind: tx.type, date: tx.date, edit: tx, sub: null });
+  }, []);
+  const openConfirmSub = useCallback((sub: UISub) => {
+    setEntry({ open: true, kind: sub.type, date: null, edit: null, sub });
   }, []);
 
   // toast de errores (se auto-limpia)
@@ -795,7 +804,6 @@ export function StoreProvider({
           startDate: input.startDate,
           nextChargeDate: input.nextChargeDate,
           alertDaysBefore: input.alertDaysBefore,
-          autoCreate: input.autoCreate,
           categoryId: input.cat ?? undefined,
           notes: input.notes || undefined,
         }),
@@ -820,7 +828,6 @@ export function StoreProvider({
       if (patch.startDate) body.startDate = patch.startDate;
       if (patch.nextChargeDate) body.nextChargeDate = patch.nextChargeDate;
       if (patch.alertDaysBefore != null) body.alertDaysBefore = patch.alertDaysBefore;
-      if (patch.autoCreate != null) body.autoCreate = patch.autoCreate;
       if (patch.status) body.status = patch.status;
       if (patch.cat !== undefined) body.categoryId = patch.cat ?? undefined;
       if (patch.notes !== undefined) body.notes = patch.notes;
@@ -845,23 +852,65 @@ export function StoreProvider({
     []
   );
 
-  // pays now (or on a given date/amount): creates the transaction server-side
-  // and folds both the updated subscription and the new tx into local state,
-  // so Movimientos/Resumen reflect it without a refetch.
-  const paySubscription = useCallback<StoreValue["paySubscription"]>(
-    async (id, opts) => {
-      const res = await fetch(`/api/subscriptions/${id}/pay`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(opts ?? {}),
+  // confirma un fijo con la fecha que eligió el usuario: aplica el cambio
+  // local al instante (transacción + avance de NextChargeDate) y sincroniza
+  // con Notion en background; si falla o el fijo ya se había confirmado
+  // (409, ver app/api/subscriptions/[id]/pay), revierte y avisa.
+  const confirmSubscription = useCallback<StoreValue["confirmSubscription"]>(
+    async (sub, input) => {
+      const prev = subscriptions.find((s) => s.id === sub.id) ?? sub;
+      const dateISO = toISO(input.date);
+      const covered = (prev.nextChargeDate ?? dateISO).slice(0, 10);
+      const optimisticSub: UISub = {
+        ...prev,
+        lastChargedDate: dateISO,
+        nextChargeDate: addInterval(covered, prev.frequency, prev.customIntervalDays, prev.dueDay),
+      };
+      const tempId = "tmp-" + crypto.randomUUID();
+      upsertTx(input.date.getFullYear(), {
+        id: tempId,
+        cat: input.cat,
+        amount: input.amount,
+        date: input.date,
+        note: input.note,
+        type: prev.type,
       });
-      if (!res.ok) throw new Error("pay subscription failed");
-      const { subscription, transaction }: { subscription: Subscription; transaction: Transaction } = await res.json();
-      setSubscriptions((list) => list.map((s) => (s.id === id ? subToUI(subscription) : s)));
-      const ui = txToUI(transaction, byId);
-      upsertTx(ui.date.getFullYear(), ui);
+      setSubscriptions((list) => list.map((s) => (s.id === prev.id ? optimisticSub : s)));
+
+      try {
+        const res = await fetch(`/api/subscriptions/${prev.id}/pay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: dateISO,
+            expectedNext: prev.nextChargeDate?.slice(0, 10) ?? null,
+            amount: input.amount,
+            categoryId: input.cat ?? undefined,
+            notes: input.note || undefined,
+          }),
+        });
+        const body = await res.json().catch(() => null);
+        if (res.status === 409) {
+          removeTx(tempId);
+          const restored: UISub | null = body?.subscription ? subToUI(body.subscription) : prev;
+          setSubscriptions((list) => list.map((s) => (s.id === prev.id ? restored : s)));
+          showNotice("Este fijo ya estaba confirmado");
+          return;
+        }
+        if (!res.ok || !body) throw new Error(`POST /api/subscriptions/${prev.id}/pay → ${res.status}`);
+        const { subscription, transaction }: { subscription: Subscription; transaction: Transaction } = body;
+        removeTx(tempId);
+        setSubscriptions((list) => list.map((s) => (s.id === prev.id ? subToUI(subscription) : s)));
+        const ui = txToUI(transaction, byId);
+        upsertTx(ui.date.getFullYear(), ui);
+      } catch (err) {
+        console.error(err);
+        removeTx(tempId);
+        setSubscriptions((list) => list.map((s) => (s.id === prev.id ? prev : s)));
+        showNotice("No se pudo confirmar el fijo");
+      }
     },
-    [byId, upsertTx]
+    [subscriptions, byId, upsertTx, removeTx, showNotice]
   );
 
   const value: StoreValue = {
@@ -904,6 +953,7 @@ export function StoreProvider({
     entry,
     openEntry,
     openEdit,
+    openConfirmSub,
     closeEntry,
     mode,
     addTransaction,
@@ -916,7 +966,7 @@ export function StoreProvider({
     addSubscription,
     updateSubscription: updateSubscriptionFn,
     deleteSubscription: deleteSubscriptionFn,
-    paySubscription,
+    confirmSubscription,
     budgets,
     setBudget,
   };

@@ -38,6 +38,13 @@ export function clampDay(y: number, m: number, day: number): number {
   return Math.min(Math.max(day, 1), daysInMonth(y, m));
 }
 
+// Same year/month as `iso`, day replaced by `dueDay` (clamped to month length).
+// Used when the user edits DueDay: 2026-09-10 + day 26 -> 2026-09-26.
+export function withDueDay(iso: string, dueDay: number): string {
+  const { y, m } = parseYMD(iso);
+  return toISODate(y, m, clampDay(y, m, dueDay));
+}
+
 function addDays(iso: string, days: number): string {
   const { y, m, d } = parseYMD(iso);
   const dt = new Date(y, m - 1, d);
@@ -74,27 +81,11 @@ interface RecurrenceLike {
   dueDay?: number | null;
 }
 
-// Walk forward from `fromISO` until the next charge date is strictly after
-// `afterISO` (defaults to today). Covers subscriptions overdue by several
-// periods without generating one transaction per missed period.
-export function nextChargeAfter(sub: RecurrenceLike, fromISO: string, afterISO?: string): string {
-  const today = afterISO ?? toISODate(new Date().getFullYear(), new Date().getMonth() + 1, new Date().getDate());
-  let next = addInterval(fromISO, sub.frequency, sub.customIntervalDays, sub.dueDay);
-  // Safety cap: never loop more than ~500 periods (covers a decade of "Diaria").
-  let guard = 0;
-  while (next <= today && guard < 500) {
-    next = addInterval(next, sub.frequency, sub.customIntervalDays, sub.dueDay);
-    guard++;
-  }
-  return next;
-}
-
-// First NextChargeDate for a brand-new subscription. Unlike nextChargeAfter()
-// (which always jumps a full period forward from a reference date), this
-// picks the closest valid occurrence on/after startDate — e.g. startDate
-// 2026-07-01 with dueDay 14 on a Mensual freq → first charge 2026-07-14, not
-// 2026-08-14. Diaria/Semanal/Personalizada have no day-of-month concept, so
-// the first charge is startDate itself.
+// First NextChargeDate for a brand-new subscription: picks the closest valid
+// occurrence on/after startDate — e.g. startDate 2026-07-01 with dueDay 14 on
+// a Mensual freq → first charge 2026-07-14, not 2026-08-14. Diaria/Semanal/
+// Personalizada have no day-of-month concept, so the first charge is
+// startDate itself.
 export function firstChargeDate(
   startDate: string,
   freq: Frequency | null,

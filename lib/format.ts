@@ -28,6 +28,13 @@ export function fmt(n: number, currency?: CurrencyCode, opts?: { sign?: boolean 
   return (sign ? sign + " " : "") + symbol + " " + s;
 }
 
+// "2026-09-10" → "10 sep". Fecha construida con el constructor local (no
+// `new Date(iso)`, que interpreta la fecha como UTC y puede correrse un día).
+export function fmtDayMonth(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("es-AR", { day: "numeric", month: "short" });
+}
+
 export function fmtShort(n: number, currency?: CurrencyCode): string {
   const { symbol } = currencyMeta(currency);
   const abs = Math.abs(n);

@@ -75,7 +75,7 @@ Cada fila = un movimiento (gasto, ingreso o transferencia).
 | `Account` | relation → Accounts | Cuenta origen |
 | `AccountTo` | relation → Accounts | Solo en `Transferencia` |
 | `Category` | relation → Categories | |
-| `Subscription` | relation → Subscriptions | Presente solo si la tx fue generada por un recurrente (pago manual o cron) |
+| `Subscription` | relation → Subscriptions | Presente solo si la tx fue generada al confirmar un recurrente |
 | `CreatedAt` | created_time | Solo lectura |
 
 **Crear una transacción de gasto:**
@@ -118,9 +118,13 @@ POST /v1/pages
 ### Subscriptions (gastos/ingresos recurrentes — "Fijos" en la app)
 
 Cada fila = una obligación periódica (gym, suscripciones, dominios, sueldo,
-etc.). Un proceso (cron diario o el botón "Pagar" del usuario) la "cobra":
-crea una fila en Transactions enlazada por `Subscription` y avanza
-`NextChargeDate`.
+etc.). Es una plantilla: no genera nada sola. Solo se "cobra" cuando el
+usuario confirma manualmente en la app (botón ✓ en Fijos → modal de gasto
+precargado, elige la fecha) — no hay cron ni cobro automático. Confirmar crea
+una fila en Transactions enlazada por `Subscription` y avanza
+`NextChargeDate` exactamente un período desde el vencimiento cubierto (no
+desde la fecha en que se confirma). Si hay varios períodos atrasados, cada
+uno se confirma por separado y el ítem sigue en "Por pagar" entre medio.
 
 | Propiedad | Tipo | Notas |
 |---|---|---|
@@ -133,26 +137,32 @@ crea una fila en Transactions enlazada por `Subscription` y avanza
 | `DueDay` | number (1–31) | Día objetivo del mes para frecuencias mensuales y superiores (Mensual/Bimestral/Trimestral/Semestral/Anual). Si el mes no tiene ese día (ej. 31 en febrero), se usa el último día del mes — nunca se salta al mes siguiente |
 | `StartDate` | date | Desde cuándo rige |
 | `NextChargeDate` | date | Próximo cobro. Es el campo que gobierna todo: si `<= hoy` y `Status = Activa`, el ítem está vencido |
-| `LastChargedDate` | date | Última vez que se cobró efectivamente (evita doble cobro si el cron corre dos veces el mismo día) |
+| `LastChargedDate` | date | Última vez que se cobró efectivamente |
 | `EndDate` | date, opcional | Al pasarla, el próximo cobro que caiga después la marca `Status = Cancelada` automáticamente |
 | `AlertDaysBefore` | number | Ventana de aviso: la app lo muestra en "Por pagar" desde N días antes del vencimiento |
-| `AutoCreate` | checkbox | **`true`**: el cron cobra solo (crea la Transaction y avanza fechas) sin intervención. **`false`**: el cron lo deja vencido en la lista "Por pagar" hasta que el usuario confirma manualmente |
+| `AutoCreate` | checkbox | **Obsoleto — la app ya no lo lee ni lo escribe.** Todo fijo requiere confirmación manual del usuario. Queda en el schema por compatibilidad con datos viejos; no usarlo en lógica nueva |
 | `Status` | select | `Activa` \| `Pausada` \| `Cancelada`. Solo `Activa` se cobra |
 | `Notes` | rich_text | |
 | `Account` | relation → Accounts | Opcional |
 | `Category` | relation → Categories | Opcional — la Transaction generada hereda esta categoría |
 
-**Cobrar un recurrente (misma lógica que usan el botón "Pagar" y el cron —
+**Confirmar un recurrente (misma lógica que usa el botón "Confirmar" —
 ver `lib/notion/payments.ts` `chargeSubscription()`):**
-1. Crear una Transaction con `Subscription` apuntando a esta fila.
-2. `PATCH` la Subscription: `LastChargedDate = fecha del cobro`,
-   `NextChargeDate = siguiente ocurrencia` (calculada respetando `Frequency`/
-   `DueDay`/`CustomIntervalDays` — ver `lib/recurrence.ts`).
-3. Si la nueva `NextChargeDate` cae después de `EndDate`, además
+1. La fecha de la Transaction la elige el usuario (no es "hoy" por defecto).
+2. Calcular `NextChargeDate` nueva = una ocurrencia después de la
+   `NextChargeDate` **actual** de la fila (el vencimiento que se está
+   cubriendo), no después de la fecha elegida — respetando `Frequency`/
+   `DueDay`/`CustomIntervalDays` (ver `lib/recurrence.ts` `addInterval()`).
+3. Crear una Transaction con `Subscription` apuntando a esta fila y la fecha
+   elegida.
+4. `PATCH` la Subscription: `LastChargedDate = fecha elegida`,
+   `NextChargeDate` = la calculada en el paso 2.
+5. Si esa nueva `NextChargeDate` cae después de `EndDate`, además
    `Status = Cancelada`.
 
-No cobrar dos veces el mismo período: comparar contra `LastChargedDate` antes
-de crear la Transaction si se está operando fuera del cron de la app.
+No cobrar dos veces el mismo período: releer la fila y comparar su
+`NextChargeDate` contra la que se vio al decidir cobrar (`expectedNext`)
+antes de escribir — si cambió, alguien ya lo confirmó mientras tanto.
 
 ## Cómo operar (recetas para un agente)
 
@@ -182,8 +192,8 @@ fuente de verdad del monto, usar siempre `Amount`.
 
 ### Crear un fijo (gasto o ingreso recurrente)
 
-Ejemplo: gimnasio, $15000 ARS, todos los meses cerca del día 14, sin cobro
-automático (queda en "Por pagar" hasta que Franco confirma):
+Ejemplo: gimnasio, $15000 ARS, todos los meses cerca del día 14 (queda en
+"Por pagar" hasta que Franco confirma — no hay cobro automático):
 
 ```json
 POST /v1/pages
@@ -199,7 +209,6 @@ POST /v1/pages
     "StartDate": { "date": { "start": "2026-08-14" } },
     "NextChargeDate": { "date": { "start": "2026-08-14" } },
     "AlertDaysBefore": { "number": 3 },
-    "AutoCreate": { "checkbox": false },
     "Status": { "select": { "name": "Activa" } },
     "Category": { "relation": [{ "id": "<category_page_id>" }] }
   }
@@ -235,23 +244,29 @@ POST /v1/databases/36d5c48e-39b6-81fd-b57c-c1d4033101e1/query
 }
 ```
 
-Los que están `AutoCreate = false` y vencidos son los que Franco tiene que
-confirmar manualmente ("Por pagar" en la app) — no cobrarlos sin que él lo pida.
+Todos los vencidos (activos, `NextChargeDate <= hoy`) son "Por pagar" en la
+app — ningún fijo se cobra solo, no cobrarlos sin que Franco lo pida.
 
 ### Cobrar un fijo
 
-Mismos 3 pasos que usan el botón "Pagar" y el cron diario
+Mismos pasos que usa el botón "Confirmar" de la app
 (`chargeSubscription()` en `lib/notion/payments.ts`):
 
-1. **Releer la fila primero** (`GET /v1/pages/{id}`): comparar `LastChargedDate`
-   contra hoy. Si ya se cobró este período, no repetir — evita doble cobro si
-   el cron corrió entre que se decidió actuar y que se ejecuta la escritura.
-2. Crear una Transaction (ver receta de arriba) con `Subscription: { "relation":
-   [{ "id": "<subscription_page_id>" }] }` agregado a `properties`.
-3. `PATCH` la Subscription:
+1. **Releer la fila primero** (`GET /v1/pages/{id}`) y anotar su
+   `NextChargeDate`. Si ya cambió respecto a lo que se vio al decidir cobrar,
+   alguien ya lo confirmó mientras tanto — no repetir.
+2. Definir la fecha del cobro (para un agente: preguntarle a Franco qué fecha
+   usar, no asumir "hoy").
+3. Calcular la nueva `NextChargeDate` = una ocurrencia después de la
+   `NextChargeDate` leída en el paso 1 (no después de la fecha del cobro),
+   respetando `Frequency`/`DueDay`/`CustomIntervalDays` (ver tabla de
+   frecuencias abajo).
+4. Crear una Transaction (ver receta de arriba) con la fecha del paso 2 y
+   `Subscription: { "relation": [{ "id": "<subscription_page_id>" }] }`
+   agregado a `properties`.
+5. `PATCH` la Subscription:
    - `LastChargedDate` = fecha del cobro.
-   - `NextChargeDate` = siguiente ocurrencia, calculada respetando
-     `Frequency`/`DueDay`/`CustomIntervalDays` (ver tabla de frecuencias abajo).
+   - `NextChargeDate` = la calculada en el paso 3.
    - Si esa nueva `NextChargeDate` cae después de `EndDate` (cuando existe),
      además `Status = "Cancelada"`.
 
@@ -321,5 +336,5 @@ siguiente todavía (queda para un agente/cron futuro).
   (rompería las relaciones de transacciones históricas) — usar `Archived` en
   Categories/Accounts o `in_trash` en Transactions/Subscriptions.
 - **Antes de cobrar un recurrente**, siempre releer la fila (`Status`,
-  `NextChargeDate`, `LastChargedDate`) por si ya fue cobrada por el cron entre
-  que se decidió actuar y que se ejecuta la escritura.
+  `NextChargeDate`, `LastChargedDate`) por si ya fue confirmada desde la app
+  (u otro agente) entre que se decidió actuar y que se ejecuta la escritura.

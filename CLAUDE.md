@@ -86,9 +86,8 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | `/api/categories/[id]` | PATCH/DELETE | Edita / archiva (soft-delete) |
 | `/api/subscriptions` | GET/POST | Lista recurrentes (`?status=`) / crea |
 | `/api/subscriptions/[id]` | PATCH/DELETE | Edita / borra (`in_trash`) |
-| `/api/subscriptions/[id]/pay` | POST | Cobra ahora: crea Transaction + avanza NextChargeDate |
+| `/api/subscriptions/[id]/pay` | POST | Confirmar: crea Transaction con la fecha elegida por el usuario y avanza `NextChargeDate` un período; `409` si `expectedNext` no coincide (ya se había confirmado) |
 | `/api/subscriptions/migrate` | POST | Agrega a la DB Subscriptions las props que falten (idempotente) |
-| `/api/cron/subscriptions` | GET | Cron diario (`CRON_SECRET`): cobra los `AutoCreate=true` vencidos |
 | `/api/budgets` | GET | Lista presupuestos del mes (`?year=YYYY&month=1-12`) |
 | `/api/budgets` | POST | Crea presupuesto (name, limit, currency, month, categoryId?) |
 | `/api/budgets/[id]` | PATCH | Edita límite / recurring / alertAt80 |
@@ -103,9 +102,18 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 - `DueDay` (1–31): día objetivo del mes; si no existe en el mes (31 en
   febrero) se clampea al último día — nunca salta de mes. Lógica en
   `lib/recurrence.ts`.
-- `AutoCreate` por ítem: `true` = el cron cobra solo; `false` = queda en "Por
-  pagar" hasta que el usuario toca Pagar. Cobro compartido (botón manual y
-  cron) en `lib/notion/payments.ts` `chargeSubscription()`.
+- **Sin registro automático ni cron.** Un fijo es una plantilla: solo se
+  convierte en Transaction cuando el usuario toca el ✓ y confirma. Ese botón
+  abre el mismo modal calculadora de "Agregar gasto"
+  (`components/app/modal-new-entry.tsx`) precargado con monto/categoría/nota
+  del fijo, y pregunta con qué fecha registrarlo (chips Vencimiento / Hoy /
+  Otra fecha — sin preselección, el botón queda deshabilitado hasta elegir).
+  Al confirmar se crea la Transaction con esa fecha y `NextChargeDate` avanza
+  exactamente un período desde el vencimiento cubierto (`lib/recurrence.ts`
+  `addInterval`); si hay varios períodos atrasados, cada uno se confirma por
+  separado. Lógica compartida en `lib/notion/payments.ts` `chargeSubscription()`.
+  `AutoCreate` sigue existiendo en Notion por compatibilidad pero la app ya no
+  lo lee ni lo escribe.
 - Antes de usar la feature en una base existente: Ajustes → Mantenimiento →
   **Preparar Notion** (llama `POST /api/subscriptions/migrate`, agrega
   `Type`/`DueDay`/`AutoCreate`/`LastChargedDate`/`EndDate` a la DB

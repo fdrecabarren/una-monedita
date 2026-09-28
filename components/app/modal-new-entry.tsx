@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useMemo, useEffect, type ReactNode } from "react";
-import { useStore, toISO, type TxType, type UITx } from "./store";
+import { useStore, toISO, type TxType, type UITx, type UISub } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Segmented } from "./ui";
-import { fmt } from "@/lib/format";
+import { fmt, fmtDayMonth } from "@/lib/format";
 
 // safe calculator: + − × ÷ with × ÷ precedence
 function calc(expr: string): number {
@@ -50,23 +50,72 @@ function Key({ label, onClick, variant, accent }: { label: ReactNode; onClick: (
   );
 }
 
+// Cuando `fromSub` está seteado, en vez de "Agregar gasto/ingreso" este
+// mismo formulario confirma un fijo: precarga monto/categoría/nota y pide
+// con qué fecha registrarlo (sin fecha preseleccionada).
+type DateChoice = "due" | "today" | "other" | null;
+
 function EntryForm({
   initialType,
   initialDate,
   edit,
+  fromSub,
 }: {
   initialType: TxType;
   initialDate: string;
   edit: UITx | null;
+  fromSub: UISub | null;
 }) {
-  const { closeEntry, categories, addTransaction, updateTransaction, deleteTransaction, currency } = useStore();
+  const { closeEntry, categories, addTransaction, updateTransaction, deleteTransaction, confirmSubscription, currency } = useStore();
   const sym = currency === "EUR" ? "€" : currency === "USD" ? "US$" : "$";
   const [type, setType] = useState<TxType>(initialType);
-  const [expr, setExpr] = useState(edit ? String(edit.amount) : "");
-  const [catId, setCatId] = useState<string | null>(edit ? edit.cat : null);
-  const [note, setNote] = useState(edit ? edit.note : "");
+  const [expr, setExpr] = useState(edit ? String(edit.amount) : fromSub ? String(fromSub.amount) : "");
+  const [catId, setCatId] = useState<string | null>(() => {
+    if (edit) return edit.cat;
+    if (fromSub) {
+      const c = categories.find((c) => c.id === fromSub.cat);
+      return c && c.type === fromSub.type ? c.id : null;
+    }
+    return null;
+  });
+  const [note, setNote] = useState(edit ? edit.note : fromSub ? fromSub.name : "");
   const [date, setDate] = useState(initialDate);
   const [panel, setPanel] = useState<"pad" | "cats">("pad");
+
+  // Fecha del fijo: sin preselección — el usuario elige entre el vencimiento,
+  // hoy u otra fecha antes de poder confirmar.
+  const todayStr = toISO(new Date());
+  const dueStr = fromSub?.nextChargeDate ? fromSub.nextChargeDate.slice(0, 10) : null;
+  const [dateChoice, setDateChoice] = useState<DateChoice>(null);
+  const [otherDate, setOtherDate] = useState("");
+
+  const effectiveDate: string | null = !fromSub
+    ? date
+    : dateChoice === "due"
+    ? dueStr
+    : dateChoice === "today"
+    ? todayStr
+    : dateChoice === "other"
+    ? otherDate || null
+    : null;
+
+  const dateChips: { value: Exclude<DateChoice, null>; label: string }[] = !fromSub
+    ? []
+    : dueStr && dueStr !== todayStr
+    ? [
+        { value: "due", label: `Vencimiento · ${fmtDayMonth(dueStr)}` },
+        { value: "today", label: `Hoy · ${fmtDayMonth(todayStr)}` },
+        { value: "other", label: "Otra fecha" },
+      ]
+    : dueStr === todayStr
+    ? [
+        { value: "today", label: "Hoy · vence hoy" },
+        { value: "other", label: "Otra fecha" },
+      ]
+    : [
+        { value: "today", label: `Hoy · ${fmtDayMonth(todayStr)}` },
+        { value: "other", label: "Otra fecha" },
+      ];
 
   const cats = useMemo(() => categories.filter((c) => c.type === type), [categories, type]);
   const cat = categories.find((c) => c.id === catId);
@@ -96,10 +145,11 @@ function EntryForm({
   // background (con rollback + toast si falla), así el modal cierra sin esperar
   function confirm() {
     const amount = Math.round(result * 100) / 100;
-    if (!amount || amount <= 0 || !catId) return;
-    const [y, m, d] = date.split("-").map(Number);
+    if (!amount || amount <= 0 || !catId || !effectiveDate) return;
+    const [y, m, d] = effectiveDate.split("-").map(Number);
     const dateObj = new Date(y, m - 1, d, 12);
-    if (edit) void updateTransaction(edit.id, { cat: catId, amount, date: dateObj, note: note.trim() });
+    if (fromSub) void confirmSubscription(fromSub, { date: dateObj, amount, cat: catId, note: note.trim() });
+    else if (edit) void updateTransaction(edit.id, { cat: catId, amount, date: dateObj, note: note.trim() });
     else void addTransaction({ cat: catId, amount, date: dateObj, note: note.trim() });
     closeEntry();
   }
@@ -136,16 +186,28 @@ function EntryForm({
   });
 
   const accent = type === "expense" ? "var(--red)" : "var(--green)";
-  const canSave = result > 0 && !!catId;
+  const canSave = result > 0 && !!catId && !!effectiveDate;
 
   return (
     <div className="um-modal-scrim" onClick={closeEntry}>
       <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, display: "flex", flexDirection: "column", maxHeight: "94dvh" }}>
         <div style={{ padding: "14px 18px 10px", display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
-          <div style={{ flex: 1 }}>
-            <Segmented value={type} onChange={(v) => { setType(v); setCatId(null); }} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
-          </div>
-          {edit && (
+          {fromSub ? (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-3)" }}>
+                Confirmar fijo
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {fromSub.name}
+                {dueStr ? ` · vence ${fmtDayMonth(dueStr)}` : ""}
+              </div>
+            </div>
+          ) : (
+            <div style={{ flex: 1 }}>
+              <Segmented value={type} onChange={(v) => { setType(v); setCatId(null); }} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
+            </div>
+          )}
+          {edit && !fromSub && (
             <button className="icon-btn" onClick={remove} aria-label="Eliminar" style={{ background: "var(--red-soft)" }}>
               <Icon name="Trash2" size={19} stroke={2} color="var(--red-600)" />
             </button>
@@ -173,7 +235,7 @@ function EntryForm({
             </div>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+          <div className="app-scroll" style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflowY: "auto" }}>
             <div style={{ padding: "6px 22px 14px", textAlign: "right" }}>
               {hasOp && <div className="tnum" style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 700, height: 18 }}>{expr.replace(/×/g, " × ").replace(/÷/g, " ÷ ")} =</div>}
               <div className="num tnum" style={{ fontSize: 44, fontWeight: 600, color: result > 0 ? accent : "var(--text-3)", lineHeight: 1.1 }}>
@@ -196,16 +258,62 @@ function EntryForm({
                 <span style={{ flex: 1, textAlign: "left", fontWeight: 700, fontSize: 15, color: cat ? "var(--text)" : "var(--text-3)" }}>{cat ? cat.name : "Elegir categoría"}</span>
                 <Icon name="ChevronRight" size={20} stroke={2.2} color="var(--text-3)" />
               </button>
-              <div style={{ display: "flex", gap: 10 }}>
-                <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
-                  <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
-                  <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
+
+              {fromSub ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
+                    <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
+                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginTop: 2 }}>
+                    ¿Con qué fecha lo registrás?
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {dateChips.map((chip) => {
+                      const on = dateChoice === chip.value;
+                      return (
+                        <button
+                          key={chip.value}
+                          type="button"
+                          onClick={() => setDateChoice(chip.value)}
+                          style={{
+                            padding: "8px 14px",
+                            borderRadius: 999,
+                            border: on ? `1.5px solid ${accent}` : "1.5px solid var(--line)",
+                            background: on ? `color-mix(in srgb, ${accent} 14%, var(--surface))` : "var(--surface)",
+                            color: on ? accent : "var(--text-2)",
+                            fontWeight: 700,
+                            fontSize: 13,
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                          }}
+                        >
+                          {chip.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {dateChoice === "other" && (
+                    <input
+                      type="date"
+                      value={otherDate}
+                      onChange={(e) => setOtherDate(e.target.value)}
+                      style={{ border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "10px 12px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", outline: "none" }}
+                    />
+                  )}
+                </>
+              ) : (
+                <div style={{ display: "flex", gap: 10 }}>
+                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
+                    <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
+                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
+                  </div>
+                  <label style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)", cursor: "pointer", minWidth: 0, flex: "0 1 auto" }}>
+                    <Icon name="Calendar" size={17} stroke={2} color="var(--text-3)" />
+                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", minWidth: 0 }} />
+                  </label>
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)", cursor: "pointer", minWidth: 0, flex: "0 1 auto" }}>
-                  <Icon name="Calendar" size={17} stroke={2} color="var(--text-3)" />
-                  <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", minWidth: 0 }} />
-                </label>
-              </div>
+              )}
             </div>
 
             <div style={{ padding: "4px 18px 18px", flex: "0 0 auto" }}>
@@ -221,7 +329,15 @@ function EntryForm({
                 style={{ marginTop: 12, width: "100%", padding: "15px", borderRadius: 14, border: "none", fontFamily: "inherit", background: canSave ? accent : "var(--bg-2)", color: canSave ? "#fff" : "var(--text-3)", fontWeight: 800, fontSize: 16, cursor: canSave ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}
               >
                 <Icon name="Check" size={20} stroke={2.6} color={canSave ? "#fff" : "var(--text-3)"} />
-                {edit ? "Guardar cambios" : type === "expense" ? "Agregar gasto" : "Agregar ingreso"}
+                {fromSub
+                  ? !effectiveDate
+                    ? "Elegí la fecha"
+                    : `Confirmar ${type === "expense" ? "gasto" : "ingreso"} · ${fmtDayMonth(effectiveDate)}`
+                  : edit
+                  ? "Guardar cambios"
+                  : type === "expense"
+                  ? "Agregar gasto"
+                  : "Agregar ingreso"}
               </button>
             </div>
           </div>
@@ -234,8 +350,22 @@ function EntryForm({
 export function NewEntryModal() {
   const { entry } = useStore();
   if (!entry.open) return null;
+
+  if (entry.sub) {
+    const s = entry.sub;
+    return (
+      <EntryForm
+        key={"sub-" + s.id + "-" + (s.nextChargeDate ?? "none")}
+        initialType={s.type}
+        initialDate={toISO(new Date())}
+        edit={null}
+        fromSub={s}
+      />
+    );
+  }
+
   const initialType: TxType = entry.edit ? entry.edit.type : entry.kind || "expense";
   const initialDate = entry.edit ? toISO(entry.edit.date) : entry.date ? toISO(entry.date) : toISO(new Date());
   const formKey = entry.edit ? "edit-" + entry.edit.id : "new-" + initialType + "-" + initialDate;
-  return <EntryForm key={formKey} initialType={initialType} initialDate={initialDate} edit={entry.edit} />;
+  return <EntryForm key={formKey} initialType={initialType} initialDate={initialDate} edit={entry.edit} fromSub={null} />;
 }

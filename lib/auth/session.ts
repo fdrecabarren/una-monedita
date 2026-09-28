@@ -95,8 +95,8 @@ export function devAuthBypass(): boolean {
 }
 
 // Build NotionCreds from env vars. Returns null if not configured.
-// Exported as getCredsFromEnv() for callers with no session cookie to read
-// (e.g. the Vercel cron route, authenticated by CRON_SECRET instead).
+// Used as a fallback for requests with no session cookie (dev auth bypass,
+// or a deploy configured entirely via env vars instead of /setup).
 export function credsFromEnv(): NotionCreds | null {
   const token = process.env.NOTION_TOKEN;
   const transactions = process.env.NOTION_DB_TRANSACTIONS;
