@@ -11,7 +11,6 @@ export const dynamic = "force-dynamic";
 const REQUIRED_PROPS: Record<string, unknown> = {
   Type: { select: { options: [{ name: "Gasto", color: "red" }, { name: "Ingreso", color: "green" }] } },
   DueDay: { number: { format: "number" } },
-  AutoCreate: { checkbox: {} },
   LastChargedDate: { date: {} },
   EndDate: { date: {} },
 };

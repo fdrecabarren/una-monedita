@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSubscriptions, createSubscription } from "@/lib/notion/subscriptions";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { notionErrorResponse } from "@/lib/notion/errors";
 import { firstChargeDate } from "@/lib/recurrence";
 import { z } from "zod";
 
@@ -35,7 +36,6 @@ const CreateSchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   nextChargeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   alertDaysBefore: z.number().int().min(0).max(30).default(3),
-  autoCreate: z.boolean().default(false),
   accountId: z.string().optional(),
   categoryId: z.string().optional(),
   notes: z.string().max(500).optional(),
@@ -62,6 +62,10 @@ export async function POST(request: Request) {
     data.nextChargeDate ??
     firstChargeDate(data.startDate, data.frequency, data.customIntervalDays, data.dueDay);
 
-  const sub = await createSubscription({ ...data, nextChargeDate }, creds);
-  return NextResponse.json(sub, { status: 201 });
+  try {
+    const sub = await createSubscription({ ...data, nextChargeDate }, creds);
+    return NextResponse.json(sub, { status: 201 });
+  } catch (err) {
+    return notionErrorResponse("subscriptions:create", err, "No se pudo crear el fijo en Notion");
+  }
 }

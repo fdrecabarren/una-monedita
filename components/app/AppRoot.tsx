@@ -24,8 +24,9 @@ function Toast() {
         color: "var(--red-600)",
         fontWeight: 700,
         fontSize: 14,
-        maxWidth: "90vw",
-        whiteSpace: "nowrap",
+        width: "max-content",
+        maxWidth: "min(90vw, 420px)",
+        textAlign: "center",
       }}
     >
       {notice}

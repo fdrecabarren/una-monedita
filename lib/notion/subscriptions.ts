@@ -1,7 +1,7 @@
 import { getNotionClient, DB_IDS, queryDatabase } from "./client";
 import type { NotionCreds } from "@/lib/auth/session";
 import { SubscriptionSchema, type Subscription, type Frequency, type SubscriptionStatus, type Currency } from "./schemas";
-import { getTitle, getSelect, getNumber, getRichText, getDate, getRelationId, getCheckbox } from "./helpers";
+import { getTitle, getSelect, getNumber, getRichText, getDate, getRelationId } from "./helpers";
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
 function pageToSubscription(page: PageObjectResponse): Subscription {
@@ -20,7 +20,6 @@ function pageToSubscription(page: PageObjectResponse): Subscription {
     lastChargedDate: getDate(p["LastChargedDate"]),
     endDate: getDate(p["EndDate"]),
     alertDaysBefore: getNumber(p["AlertDaysBefore"]) ?? 3,
-    autoCreate: getCheckbox(p["AutoCreate"]),
     status: getSelect(p["Status"]) as SubscriptionStatus | null,
     notes: getRichText(p["Notes"]),
     accountId: getRelationId(p["Account"]),
@@ -48,10 +47,6 @@ export async function getSubscriptions(status?: SubscriptionStatus, creds?: Noti
     .map(pageToSubscription);
 }
 
-export async function getActiveSubscriptions(creds?: NotionCreds): Promise<Subscription[]> {
-  return getSubscriptions("Activa", creds);
-}
-
 export async function getSubscriptionById(id: string, creds?: NotionCreds): Promise<Subscription | null> {
   const notion = getNotionClient(creds?.token);
   try {
@@ -74,7 +69,6 @@ export async function createSubscription(data: {
   startDate: string;
   nextChargeDate: string;
   alertDaysBefore?: number;
-  autoCreate?: boolean;
   accountId?: string;
   categoryId?: string;
   notes?: string;
@@ -91,7 +85,6 @@ export async function createSubscription(data: {
       StartDate: { date: { start: data.startDate } },
       NextChargeDate: { date: { start: data.nextChargeDate } },
       AlertDaysBefore: { number: data.alertDaysBefore ?? 3 },
-      AutoCreate: { checkbox: data.autoCreate ?? false },
       Status: { select: { name: "Activa" } },
       ...(data.customIntervalDays != null ? { CustomIntervalDays: { number: data.customIntervalDays } } : {}),
       ...(data.dueDay != null ? { DueDay: { number: data.dueDay } } : {}),
@@ -118,7 +111,6 @@ export async function updateSubscription(
     lastChargedDate: string;
     endDate: string | null;
     alertDaysBefore: number;
-    autoCreate: boolean;
     status: SubscriptionStatus;
     accountId: string;
     categoryId: string;
@@ -142,7 +134,6 @@ export async function updateSubscription(
       ...(data.lastChargedDate ? { LastChargedDate: { date: { start: data.lastChargedDate } } } : {}),
       ...(data.endDate !== undefined ? { EndDate: data.endDate ? { date: { start: data.endDate } } : { date: null } } : {}),
       ...(data.alertDaysBefore != null ? { AlertDaysBefore: { number: data.alertDaysBefore } } : {}),
-      ...(data.autoCreate != null ? { AutoCreate: { checkbox: data.autoCreate } } : {}),
       ...(data.status ? { Status: { select: { name: data.status } } } : {}),
       ...(data.accountId ? { Account: { relation: [{ id: data.accountId }] } } : {}),
       ...(data.categoryId ? { Category: { relation: [{ id: data.categoryId }] } } : {}),
@@ -150,15 +141,6 @@ export async function updateSubscription(
     },
   });
   return pageToSubscription(page as PageObjectResponse);
-}
-
-// Kept for callers that only need to bump the next charge date.
-export async function updateSubscriptionNextCharge(id: string, nextChargeDate: string, creds?: NotionCreds): Promise<void> {
-  await updateSubscription(id, { nextChargeDate }, creds);
-}
-
-export async function updateSubscriptionStatus(id: string, status: SubscriptionStatus, creds?: NotionCreds): Promise<void> {
-  await updateSubscription(id, { status }, creds);
 }
 
 export async function deleteSubscription(id: string, creds?: NotionCreds): Promise<void> {

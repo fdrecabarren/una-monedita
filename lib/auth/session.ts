@@ -98,33 +98,38 @@ export function devAuthBypass(): boolean {
 // Used as a fallback for requests with no session cookie (dev auth bypass,
 // or a deploy configured entirely via env vars instead of /setup).
 export function credsFromEnv(): NotionCreds | null {
-  const token = process.env.NOTION_TOKEN;
-  const transactions = process.env.NOTION_DB_TRANSACTIONS;
+  // .trim(): una env var cargada con `echo` puede traer un salto de línea al
+  // final; en la URL de una query no molesta, pero como `parent.database_id`
+  // de pages.create rompe la creación.
+  const token = process.env.NOTION_TOKEN?.trim();
+  const transactions = process.env.NOTION_DB_TRANSACTIONS?.trim();
   if (!token || !transactions) return null;
   return {
     token,
     dbIds: {
       transactions,
-      accounts: process.env.NOTION_DB_ACCOUNTS ?? "",
-      categories: process.env.NOTION_DB_CATEGORIES ?? "",
-      subscriptions: process.env.NOTION_DB_SUBSCRIPTIONS ?? "",
-      budgets: process.env.NOTION_DB_BUDGETS ?? "",
-      fxRates: process.env.NOTION_DB_FX_RATES ?? "",
+      accounts: process.env.NOTION_DB_ACCOUNTS?.trim() ?? "",
+      categories: process.env.NOTION_DB_CATEGORIES?.trim() ?? "",
+      subscriptions: process.env.NOTION_DB_SUBSCRIPTIONS?.trim() ?? "",
+      budgets: process.env.NOTION_DB_BUDGETS?.trim() ?? "",
+      fxRates: process.env.NOTION_DB_FX_RATES?.trim() ?? "",
     },
   };
 }
 
 function credsFromPayload(payload: SessionPayload): NotionCreds | null {
-  if (!payload.notionToken || !payload.dbTransactions) return null;
+  const token = payload.notionToken?.trim();
+  const transactions = payload.dbTransactions?.trim();
+  if (!token || !transactions) return null;
   return {
-    token: payload.notionToken,
+    token,
     dbIds: {
-      transactions: payload.dbTransactions,
-      accounts: payload.dbAccounts ?? "",
-      categories: payload.dbCategories ?? "",
-      subscriptions: payload.dbSubscriptions ?? "",
-      budgets: payload.dbBudgets ?? "",
-      fxRates: payload.dbFxRates ?? "",
+      transactions,
+      accounts: payload.dbAccounts?.trim() ?? "",
+      categories: payload.dbCategories?.trim() ?? "",
+      subscriptions: payload.dbSubscriptions?.trim() ?? "",
+      budgets: payload.dbBudgets?.trim() ?? "",
+      fxRates: payload.dbFxRates?.trim() ?? "",
     },
   };
 }

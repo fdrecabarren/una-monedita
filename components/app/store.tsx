@@ -47,6 +47,9 @@ export interface UITx {
   date: Date;
   note: string;
   type: TxType;
+  // Fijo (Subscription) al que corresponde este movimiento, si lo registró el
+  // botón "Registrar pago". Alimenta "Pagos registrados" en el editor del fijo.
+  sub: string | null;
 }
 
 // Recurrentes (gastos/ingresos fijos). Dates stay as YYYY-MM-DD strings —
@@ -65,7 +68,6 @@ export interface UISub {
   nextChargeDate: string | null;
   lastChargedDate: string | null;
   endDate: string | null;
-  alertDaysBefore: number;
   status: SubscriptionStatus;
   notes: string;
   cat: string | null;
@@ -169,6 +171,9 @@ interface StoreValue {
   addSubscription: (sub: NewSubInput) => Promise<void>;
   updateSubscription: (id: string, patch: Partial<NewSubInput> & { status?: SubscriptionStatus }) => Promise<void>;
   deleteSubscription: (id: string) => Promise<void>;
+  // pagos registrados de un fijo (movimientos enlazados por `sub`), del más
+  // nuevo al más viejo; solo cubre los años ya cargados en cache.
+  subPayments: (subId: string) => UITx[];
   confirmSubscription: (
     sub: UISub,
     input: { date: Date; amount: number; cat: string | null; note: string }
@@ -187,9 +192,8 @@ export interface NewSubInput {
   dueDay?: number;
   startDate: string;
   nextChargeDate?: string;
-  alertDaysBefore: number;
   cat: string | null;
-  notes: string;
+  notes?: string;
 }
 
 const StoreCtx = createContext<StoreValue | null>(null);
@@ -217,6 +221,7 @@ function txToUI(t: Transaction, byId: Record<string, UICategory>): UITx {
     date: parseDate(t.date),
     note: t.notes || "",
     type,
+    sub: t.subscriptionId,
   };
 }
 
@@ -234,7 +239,6 @@ function subToUI(s: Subscription): UISub {
     nextChargeDate: s.nextChargeDate,
     lastChargedDate: s.lastChargedDate,
     endDate: s.endDate,
-    alertDaysBefore: s.alertDaysBefore,
     status: s.status ?? "Activa",
     notes: s.notes ?? "",
     cat: s.categoryId,
@@ -260,6 +264,54 @@ function persist(key: string, value: string) {
   } catch {
     /* ignore */
   }
+}
+
+// crypto.randomUUID solo existe en contextos seguros (https/localhost): sobre
+// http://<ip-lan> tira TypeError antes de guardar. Fallback para no depender de eso.
+function newTempId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return Date.now().toString(36) + Math.random().toString(36).slice(2);
+}
+
+// Respuesta no-2xx de la API. `detail` es el motivo que devolvió el servidor
+// (`message` / `code` de Notion o `error`); `expired` = la sesión venció.
+class HttpError extends Error {
+  status: number;
+  detail: string | null;
+  expired: boolean;
+  constructor(status: number, detail: string | null, expired: boolean) {
+    super(`HTTP ${status}${detail ? ` · ${detail}` : ""}`);
+    this.status = status;
+    this.detail = detail;
+    this.expired = expired;
+  }
+}
+
+function httpErrorFrom(res: Response, body: unknown): HttpError {
+  const b = (body && typeof body === "object" ? body : {}) as { error?: unknown; code?: unknown; message?: unknown };
+  const pick = (v: unknown) => (typeof v === "string" && v ? v : null);
+  const detail = pick(b.message) ?? pick(b.code) ?? pick(b.error);
+  const expired = res.redirected || (res.status === 401 && b.error === "Sesión vencida");
+  return new HttpError(res.status, detail, expired);
+}
+
+async function httpError(res: Response): Promise<HttpError> {
+  return httpErrorFrom(res, await res.json().catch(() => null));
+}
+
+// Texto del toast: dice por qué falló en vez de un genérico.
+function failureText(err: unknown, fallback: string): string {
+  if (err instanceof HttpError) {
+    if (err.expired) return "Tu sesión venció. Volvé a entrar.";
+    if (err.status === 429) return err.detail ?? "Demasiadas operaciones. Esperá un minuto.";
+    // Notion bloquea crear páginas cuando el workspace agotó los bloques del plan gratis
+    if (err.detail && /free blocks/i.test(err.detail)) {
+      return "Notion no deja crear más: el workspace llegó al límite de bloques del plan gratis. Hay que liberar espacio o mejorar el plan.";
+    }
+    return `${fallback} (${err.detail ?? "error " + err.status})`.slice(0, 140);
+  }
+  if (err instanceof TypeError && /fetch|network|load failed/i.test(err.message)) return `${fallback}: sin conexión`;
+  return fallback;
 }
 
 export function StoreProvider({
@@ -449,8 +501,18 @@ export function StoreProvider({
   const showNotice = useCallback((msg: string) => {
     setNotice(msg);
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    noticeTimer.current = setTimeout(() => setNotice(null), 4000);
+    // los avisos con motivo son más largos: más tiempo para leerlos
+    noticeTimer.current = setTimeout(() => setNotice(null), Math.min(9000, 3000 + msg.length * 50));
   }, []);
+  // error de una mutación: muestra el motivo y, si la sesión venció, manda al login
+  const notifyFailure = useCallback(
+    (err: unknown, fallback: string) => {
+      console.error(err);
+      showNotice(failureText(err, fallback));
+      if (err instanceof HttpError && err.expired) setTimeout(() => location.assign("/login"), 1800);
+    },
+    [showNotice]
+  );
   const closeEntry = useCallback(() => setEntry((e) => ({ ...e, open: false })), []);
 
   const transactions = useMemo(() => txByYear[year] || [], [txByYear, year]);
@@ -637,7 +699,7 @@ export function StoreProvider({
     async ({ cat, amount, date, note }) => {
       const category = byId[cat];
       const kind = category?.type === "income" ? "Ingreso" : "Gasto";
-      const tempId = "tmp-" + crypto.randomUUID();
+      const tempId = "tmp-" + newTempId();
       upsertTx(date.getFullYear(), {
         id: tempId,
         cat,
@@ -645,6 +707,7 @@ export function StoreProvider({
         date,
         note,
         type: category?.type ?? "expense",
+        sub: null,
       });
       void fetch("/api/transactions", {
         method: "POST",
@@ -659,19 +722,18 @@ export function StoreProvider({
         }),
       })
         .then(async (res) => {
-          if (!res.ok) throw new Error(`POST /api/transactions → ${res.status}`);
+          if (!res.ok) throw await httpError(res);
           const created: Transaction = await res.json();
           removeTx(tempId);
           const ui = txToUI(created, byId);
           upsertTx(ui.date.getFullYear(), ui);
         })
         .catch((err) => {
-          console.error(err);
           removeTx(tempId);
-          showNotice("No se pudo guardar el movimiento");
+          notifyFailure(err, "No se pudo guardar el movimiento");
         });
     },
-    [byId, upsertTx, removeTx, currency, showNotice]
+    [byId, upsertTx, removeTx, currency, notifyFailure]
   );
 
   const updateTransaction = useCallback<StoreValue["updateTransaction"]>(
@@ -704,20 +766,19 @@ export function StoreProvider({
         body: JSON.stringify(body),
       })
         .then(async (res) => {
-          if (!res.ok) throw new Error(`PATCH /api/transactions/${id} → ${res.status}`);
+          if (!res.ok) throw await httpError(res);
           const updated: Transaction = await res.json();
           removeTx(id);
           const ui = txToUI(updated, byId);
           upsertTx(ui.date.getFullYear(), ui);
         })
         .catch((err) => {
-          console.error(err);
           removeTx(id);
           upsertTx(prev.date.getFullYear(), prev);
-          showNotice("No se pudieron guardar los cambios");
+          notifyFailure(err, "No se pudieron guardar los cambios");
         });
     },
-    [byId, findTx, removeTx, upsertTx, showNotice]
+    [byId, findTx, removeTx, upsertTx, notifyFailure]
   );
 
   const deleteTransaction = useCallback<StoreValue["deleteTransaction"]>(
@@ -725,16 +786,15 @@ export function StoreProvider({
       const prev = findTx(id);
       removeTx(id);
       void fetch(`/api/transactions/${id}`, { method: "DELETE" })
-        .then((res) => {
-          if (!res.ok) throw new Error(`DELETE /api/transactions/${id} → ${res.status}`);
+        .then(async (res) => {
+          if (!res.ok) throw await httpError(res);
         })
         .catch((err) => {
-          console.error(err);
           if (prev) upsertTx(prev.date.getFullYear(), prev);
-          showNotice("No se pudo eliminar el movimiento");
+          notifyFailure(err, "No se pudo eliminar el movimiento");
         });
     },
-    [findTx, removeTx, upsertTx, showNotice]
+    [findTx, removeTx, upsertTx, notifyFailure]
   );
 
   const addCategory = useCallback<StoreValue["addCategory"]>(
@@ -803,12 +863,11 @@ export function StoreProvider({
           dueDay: input.dueDay,
           startDate: input.startDate,
           nextChargeDate: input.nextChargeDate,
-          alertDaysBefore: input.alertDaysBefore,
           categoryId: input.cat ?? undefined,
           notes: input.notes || undefined,
         }),
       });
-      if (!res.ok) throw new Error("create subscription failed");
+      if (!res.ok) throw await httpError(res);
       const created: Subscription = await res.json();
       setSubscriptions((list) => [...list, subToUI(created)]);
     },
@@ -827,7 +886,6 @@ export function StoreProvider({
       if (patch.dueDay != null) body.dueDay = patch.dueDay;
       if (patch.startDate) body.startDate = patch.startDate;
       if (patch.nextChargeDate) body.nextChargeDate = patch.nextChargeDate;
-      if (patch.alertDaysBefore != null) body.alertDaysBefore = patch.alertDaysBefore;
       if (patch.status) body.status = patch.status;
       if (patch.cat !== undefined) body.categoryId = patch.cat ?? undefined;
       if (patch.notes !== undefined) body.notes = patch.notes;
@@ -836,7 +894,7 @@ export function StoreProvider({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error("update subscription failed");
+      if (!res.ok) throw await httpError(res);
       const updated: Subscription = await res.json();
       setSubscriptions((list) => list.map((s) => (s.id === id ? subToUI(updated) : s)));
     },
@@ -846,16 +904,26 @@ export function StoreProvider({
   const deleteSubscriptionFn = useCallback<StoreValue["deleteSubscription"]>(
     async (id) => {
       const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("delete subscription failed");
+      if (!res.ok) throw await httpError(res);
       setSubscriptions((list) => list.filter((s) => s.id !== id));
     },
     []
   );
 
-  // confirma un fijo con la fecha que eligió el usuario: aplica el cambio
-  // local al instante (transacción + avance de NextChargeDate) y sincroniza
-  // con Notion en background; si falla o el fijo ya se había confirmado
-  // (409, ver app/api/subscriptions/[id]/pay), revierte y avisa.
+  const subPayments = useCallback<StoreValue["subPayments"]>(
+    (subId) =>
+      Object.values(txByYear)
+        .flat()
+        .filter((t) => t.sub === subId && !t.id.startsWith("tmp-"))
+        .sort((a, b) => b.date.getTime() - a.date.getTime()),
+    [txByYear]
+  );
+
+  // registra el pago de un fijo con la fecha que eligió el usuario (default
+  // hoy): aplica el cambio local al instante (transacción + avance de
+  // NextChargeDate) y sincroniza con Notion en background; si falla o el fijo
+  // ya se había registrado (409, ver app/api/subscriptions/[id]/pay), revierte
+  // y avisa con el motivo del servidor.
   const confirmSubscription = useCallback<StoreValue["confirmSubscription"]>(
     async (sub, input) => {
       const prev = subscriptions.find((s) => s.id === sub.id) ?? sub;
@@ -866,7 +934,7 @@ export function StoreProvider({
         lastChargedDate: dateISO,
         nextChargeDate: addInterval(covered, prev.frequency, prev.customIntervalDays, prev.dueDay),
       };
-      const tempId = "tmp-" + crypto.randomUUID();
+      const tempId = "tmp-" + newTempId();
       upsertTx(input.date.getFullYear(), {
         id: tempId,
         cat: input.cat,
@@ -874,6 +942,7 @@ export function StoreProvider({
         date: input.date,
         note: input.note,
         type: prev.type,
+        sub: prev.id,
       });
       setSubscriptions((list) => list.map((s) => (s.id === prev.id ? optimisticSub : s)));
 
@@ -894,23 +963,22 @@ export function StoreProvider({
           removeTx(tempId);
           const restored: UISub | null = body?.subscription ? subToUI(body.subscription) : prev;
           setSubscriptions((list) => list.map((s) => (s.id === prev.id ? restored : s)));
-          showNotice("Este fijo ya estaba confirmado");
+          showNotice(typeof body?.error === "string" ? body.error : "Este fijo ya estaba registrado");
           return;
         }
-        if (!res.ok || !body) throw new Error(`POST /api/subscriptions/${prev.id}/pay → ${res.status}`);
+        if (!res.ok || !body) throw httpErrorFrom(res, body);
         const { subscription, transaction }: { subscription: Subscription; transaction: Transaction } = body;
         removeTx(tempId);
         setSubscriptions((list) => list.map((s) => (s.id === prev.id ? subToUI(subscription) : s)));
         const ui = txToUI(transaction, byId);
         upsertTx(ui.date.getFullYear(), ui);
       } catch (err) {
-        console.error(err);
         removeTx(tempId);
         setSubscriptions((list) => list.map((s) => (s.id === prev.id ? prev : s)));
-        showNotice("No se pudo confirmar el fijo");
+        notifyFailure(err, "No se pudo registrar el pago");
       }
     },
-    [subscriptions, byId, upsertTx, removeTx, showNotice]
+    [subscriptions, byId, upsertTx, removeTx, showNotice, notifyFailure]
   );
 
   const value: StoreValue = {
@@ -966,6 +1034,7 @@ export function StoreProvider({
     addSubscription,
     updateSubscription: updateSubscriptionFn,
     deleteSubscription: deleteSubscriptionFn,
+    subPayments,
     confirmSubscription,
     budgets,
     setBudget,
@@ -980,5 +1049,5 @@ export function useStore(): StoreValue {
   return ctx;
 }
 
-export { toISO, parseDate };
+export { toISO, parseDate, failureText };
 export type { Period, DateRange };

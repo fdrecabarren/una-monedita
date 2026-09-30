@@ -5,7 +5,17 @@ const PUBLIC_PATHS = ["/login", "/api/auth"];
 // Authenticated users may reach these even without Notion creds configured.
 const SETUP_PATHS = ["/setup", "/api/setup", "/api/me"];
 
+// Las llamadas fetch a /api/* con sesión vencida reciben 401 JSON: un redirect
+// a /login hace que el fetch reciba HTML con 200 y el cliente no pueda saber
+// que la sesión venció (solo veía "No se pudo guardar").
+function apiUnauthorized(error: string, clearCookie: boolean): NextResponse {
+  const res = NextResponse.json({ error }, { status: 401 });
+  if (clearCookie) res.cookies.delete(COOKIE_NAME);
+  return res;
+}
+
 function redirectToLogin(req: NextRequest, pathname: string): NextResponse {
+  if (pathname.startsWith("/api/")) return apiUnauthorized("Sesión vencida", true);
   const loginUrl = new URL("/login", req.url);
   loginUrl.searchParams.set("from", pathname);
   const res = NextResponse.redirect(loginUrl);
@@ -44,6 +54,7 @@ export async function proxy(req: NextRequest) {
 
   // Authenticated but unconfigured → force the setup flow (except setup paths).
   if (!hasCreds && !onSetupPath) {
+    if (pathname.startsWith("/api/")) return apiUnauthorized("Notion no configurado", false);
     return NextResponse.redirect(new URL("/setup", req.url));
   }
 
