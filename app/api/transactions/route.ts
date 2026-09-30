@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createTransaction, getTransactionsByYear } from "@/lib/notion/transactions";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { notionErrorResponse } from "@/lib/notion/errors";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -16,8 +17,12 @@ export async function GET(request: Request) {
   if (Number.isNaN(year)) {
     return NextResponse.json({ error: "year inválido" }, { status: 400 });
   }
-  const transactions = await getTransactionsByYear(year, creds);
-  return NextResponse.json({ transactions });
+  try {
+    const transactions = await getTransactionsByYear(year, creds);
+    return NextResponse.json({ transactions });
+  } catch (err) {
+    return notionErrorResponse("transactions:get", err, "No se pudieron cargar los movimientos");
+  }
 }
 
 const BodySchema = z.object({
@@ -45,13 +50,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { type, amount, currency, date, categoryId, notes } = parsed.data;
-  const tx = await createTransaction({
-    type,
-    amount,
-    currency,
-    date: date ?? new Date().toISOString().split("T")[0],
-    categoryId,
-    notes,
-  }, creds);
-  return NextResponse.json(tx, { status: 201 });
+  try {
+    const tx = await createTransaction({
+      type,
+      amount,
+      currency,
+      date: date ?? new Date().toISOString().split("T")[0],
+      categoryId,
+      notes,
+    }, creds);
+    return NextResponse.json(tx, { status: 201 });
+  } catch (err) {
+    return notionErrorResponse("transactions:create", err);
+  }
 }

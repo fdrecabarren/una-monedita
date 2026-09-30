@@ -1,11 +1,11 @@
 "use client";
 
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { useStore, type UISub, type TxType, type NewSubInput } from "./store";
+import { useStore, failureText, type UISub, type TxType, type NewSubInput } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Segmented } from "./ui";
 import { firstChargeDate, withDueDay, todayISO } from "@/lib/recurrence";
-import { fmtDayMonth } from "@/lib/format";
+import { fmt } from "@/lib/format";
 import type { Frequency } from "@/lib/notion/schemas";
 
 export type EditTarget = UISub | { type: TxType } | null;
@@ -84,7 +84,7 @@ export function SubEditor({
   onClose: () => void;
   onTypeHint?: (t: TxType) => void;
 }) {
-  const { categories, currency: appCurrency, addSubscription, updateSubscription, deleteSubscription } = useStore();
+  const { categories, currency: appCurrency, addSubscription, updateSubscription, deleteSubscription, subPayments } = useStore();
   const existing = "id" in initial ? initial : null;
   const isNew = !existing;
 
@@ -95,33 +95,27 @@ export function SubEditor({
   const [frequency, setFrequency] = useState<Frequency>(existing?.frequency ?? "Mensual");
   const [customIntervalDays, setCustomIntervalDays] = useState(existing?.customIntervalDays ? String(existing.customIntervalDays) : "30");
   const [dueDay, setDueDay] = useState(existing?.dueDay ? String(existing.dueDay) : "");
-  const [startDate, setStartDate] = useState(existing?.startDate ?? todayISO());
-  // Próximo cobro: para un fijo nuevo se deriva en vivo del inicio/día del mes
-  // mientras el usuario no la toque a mano (nextTouched); un fijo existente ya
-  // arranca "tocado" — su fecha nunca se recalcula sola por cambiar frecuencia
-  // o inicio (eso fue lo que rompía Alquiler). Cambiar el día del mes sí la
-  // retarget-ea (ver handleDueDayChange), manteniendo el mismo mes/histórico.
-  const [nextTouched, setNextTouched] = useState(!!existing);
-  const [nextChargeDate, setNextChargeDate] = useState(existing?.nextChargeDate ?? "");
-  const [alertDaysBefore, setAlertDaysBefore] = useState(existing ? String(existing.alertDaysBefore) : "3");
-  const [notes, setNotes] = useState(existing?.notes ?? "");
+  // Próximo vencimiento: un fijo nuevo lo deriva del día del mes (desde hoy);
+  // uno existente conserva el suyo — cambiar la frecuencia nunca lo mueve (eso
+  // fue lo que rompía Alquiler) y cambiar el día del mes lo retargetea dentro
+  // del mismo mes (handleDueDayChange), sin perder el historial de pagos.
+  const [nextChargeDate, setNextChargeDate] = useState(existing?.nextChargeDate?.slice(0, 10) ?? "");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const cats = useMemo(() => categories.filter((c) => c.type === type), [categories, type]);
+  const payments = useMemo(() => (existing ? subPayments(existing.id) : []), [existing, subPayments]);
 
   const derivedFirstCharge = firstChargeDate(
-    startDate,
+    todayISO(),
     frequency,
     frequency === "Personalizada" ? Number(customIntervalDays) || 30 : undefined,
     HAS_DUE_DAY.includes(frequency) && dueDay ? Number(dueDay) : undefined
   );
-  const effectiveNext = nextTouched && nextChargeDate ? nextChargeDate : derivedFirstCharge;
+  const effectiveNext = existing ? nextChargeDate : derivedFirstCharge;
 
   function handleDueDayChange(v: string) {
     setDueDay(v);
-    // Fijo existente + frecuencia con día del mes: retarget-ea el próximo
-    // cobro al nuevo día dentro del mismo mes (ej. Claude 10/09 → 26/09), sin
-    // perder el historial de cobros ya hechos.
     if (existing && HAS_DUE_DAY.includes(frequency) && nextChargeDate) {
       const n = parseInt(v, 10);
       if (Number.isInteger(n) && n >= 1 && n <= 31) {
@@ -130,54 +124,51 @@ export function SubEditor({
     }
   }
 
-  async function save() {
+  // corre una acción del editor: cierra si sale bien, muestra el motivo si falla
+  async function run(action: () => Promise<void>) {
     if (busy) return;
-    const amt = Math.round((parseFloat(amount) || 0) * 100) / 100;
-    if (!amt || amt <= 0) return;
     setBusy(true);
+    setError(null);
     try {
-      const payload: NewSubInput = {
-        name: name.trim() || "Sin nombre",
-        type,
-        amount: amt,
-        currency: appCurrency,
-        frequency,
-        customIntervalDays: frequency === "Personalizada" ? Number(customIntervalDays) || 30 : undefined,
-        dueDay: HAS_DUE_DAY.includes(frequency) && dueDay ? Number(dueDay) : undefined,
-        startDate,
-        nextChargeDate: effectiveNext,
-        alertDaysBefore: Number(alertDaysBefore) || 0,
-        cat: catId,
-        notes: notes.trim(),
-      };
-      if (existing) await updateSubscription(existing.id, payload);
-      else await addSubscription(payload);
+      await action();
       onClose();
+    } catch (err) {
+      console.error(err);
+      setError(failureText(err, "No se pudo guardar"));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function save() {
+    const amt = Math.round((parseFloat(amount) || 0) * 100) / 100;
+    if (!amt || amt <= 0) {
+      setError("Ingresá un monto");
+      return;
+    }
+    const payload: NewSubInput = {
+      name: name.trim() || "Sin nombre",
+      type,
+      amount: amt,
+      currency: appCurrency,
+      frequency,
+      customIntervalDays: frequency === "Personalizada" ? Number(customIntervalDays) || 30 : undefined,
+      dueDay: HAS_DUE_DAY.includes(frequency) && dueDay ? Number(dueDay) : undefined,
+      startDate: existing?.startDate ?? todayISO(),
+      nextChargeDate: effectiveNext || undefined,
+      cat: catId,
+    };
+    await run(() => (existing ? updateSubscription(existing.id, payload) : addSubscription(payload)));
   }
 
   async function togglePause() {
-    if (!existing || busy) return;
-    setBusy(true);
-    try {
-      await updateSubscription(existing.id, { status: existing.status === "Pausada" ? "Activa" : "Pausada" });
-      onClose();
-    } finally {
-      setBusy(false);
-    }
+    if (!existing) return;
+    await run(() => updateSubscription(existing.id, { status: existing.status === "Pausada" ? "Activa" : "Pausada" }));
   }
 
   async function remove() {
-    if (!existing || busy) return;
-    setBusy(true);
-    try {
-      await deleteSubscription(existing.id);
-      onClose();
-    } finally {
-      setBusy(false);
-    }
+    if (!existing) return;
+    await run(() => deleteSubscription(existing.id));
   }
 
   return (
@@ -270,41 +261,35 @@ export function SubEditor({
             <Field label="Día del mes (aprox.)">
               <input type="number" min={1} max={31} value={dueDay} onChange={(e) => handleDueDayChange(e.target.value)} placeholder="Ej: 14" style={inputStyle} />
               <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.4 }}>
-                Si el mes no tiene ese día (ej. 31 en febrero), se cobra el último día del mes.
+                Si el mes no tiene ese día (ej. 31 en febrero), vence el último día del mes.
               </div>
             </Field>
           )}
 
-          <Field label="Empieza">
-            <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inputStyle} />
-          </Field>
+          {existing && (
+            <Field label="Pagos registrados">
+              {payments.length === 0 ? (
+                <div style={{ fontSize: 13, color: "var(--text-3)", lineHeight: 1.4 }}>
+                  Todavía no registraste pagos. Tocá ✓ en la lista el día que pagues o te debiten.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {payments.slice(0, 5).map((p) => (
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 12px", borderRadius: 10, background: "var(--bg-2)", fontSize: 13.5, fontWeight: 600, color: "var(--text-2)" }}>
+                      <span>{p.date.toLocaleDateString("es-AR", { day: "numeric", month: "short", year: "numeric" })}</span>
+                      <span className="tnum" style={{ color: "var(--text)", fontWeight: 700 }}>{fmt(p.amount, existing.currency)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Field>
+          )}
 
-          <Field label="Próximo cobro">
-            <input
-              type="date"
-              value={effectiveNext}
-              onChange={(e) => {
-                setNextChargeDate(e.target.value);
-                setNextTouched(true);
-              }}
-              style={inputStyle}
-            />
-            <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.4 }}>
-              {existing
-                ? existing.lastChargedDate
-                  ? `Último registro: ${fmtDayMonth(existing.lastChargedDate)}`
-                  : "Todavía no se registró ninguno"
-                : "Se calcula con el día del mes y el inicio. Podés cambiarla."}
+          {error && (
+            <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--red-600)", lineHeight: 1.4 }}>
+              {error}
             </div>
-          </Field>
-
-          <Field label="Avisar con anticipación (días)">
-            <input type="number" min={0} max={30} value={alertDaysBefore} onChange={(e) => setAlertDaysBefore(e.target.value)} style={inputStyle} />
-          </Field>
-
-          <Field label="Notas">
-            <input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Opcional" style={inputStyle} />
-          </Field>
+          )}
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             {existing && (

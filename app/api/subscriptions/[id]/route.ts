@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { updateSubscription, deleteSubscription } from "@/lib/notion/subscriptions";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { notionErrorResponse } from "@/lib/notion/errors";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,6 @@ const PatchSchema = z.object({
   nextChargeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   alertDaysBefore: z.number().int().min(0).max(30).optional(),
-  autoCreate: z.boolean().optional(),
   status: z.enum(["Activa", "Pausada", "Cancelada"]).optional(),
   accountId: z.string().optional(),
   categoryId: z.string().optional(),
@@ -42,8 +42,12 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const sub = await updateSubscription(id, parsed.data, creds);
-  return NextResponse.json(sub);
+  try {
+    const sub = await updateSubscription(id, parsed.data, creds);
+    return NextResponse.json(sub);
+  } catch (err) {
+    return notionErrorResponse("subscriptions:update", err, "No se pudo guardar el fijo en Notion");
+  }
 }
 
 export async function DELETE(
@@ -57,6 +61,10 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  await deleteSubscription(id, creds);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteSubscription(id, creds);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return notionErrorResponse("subscriptions:delete", err, "No se pudo eliminar el fijo en Notion");
+  }
 }

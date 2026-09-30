@@ -51,10 +51,8 @@ function Key({ label, onClick, variant, accent }: { label: ReactNode; onClick: (
 }
 
 // Cuando `fromSub` está seteado, en vez de "Agregar gasto/ingreso" este
-// mismo formulario confirma un fijo: precarga monto/categoría/nota y pide
-// con qué fecha registrarlo (sin fecha preseleccionada).
-type DateChoice = "due" | "today" | "other" | null;
-
+// mismo formulario registra el pago de un fijo: precarga monto/categoría/nota
+// y propone hoy como fecha (editable, por si el débito fue otro día).
 function EntryForm({
   initialType,
   initialDate,
@@ -82,40 +80,9 @@ function EntryForm({
   const [date, setDate] = useState(initialDate);
   const [panel, setPanel] = useState<"pad" | "cats">("pad");
 
-  // Fecha del fijo: sin preselección — el usuario elige entre el vencimiento,
-  // hoy u otra fecha antes de poder confirmar.
-  const todayStr = toISO(new Date());
-  const dueStr = fromSub?.nextChargeDate ? fromSub.nextChargeDate.slice(0, 10) : null;
-  const [dateChoice, setDateChoice] = useState<DateChoice>(null);
-  const [otherDate, setOtherDate] = useState("");
-
-  const effectiveDate: string | null = !fromSub
-    ? date
-    : dateChoice === "due"
-    ? dueStr
-    : dateChoice === "today"
-    ? todayStr
-    : dateChoice === "other"
-    ? otherDate || null
-    : null;
-
-  const dateChips: { value: Exclude<DateChoice, null>; label: string }[] = !fromSub
-    ? []
-    : dueStr && dueStr !== todayStr
-    ? [
-        { value: "due", label: `Vencimiento · ${fmtDayMonth(dueStr)}` },
-        { value: "today", label: `Hoy · ${fmtDayMonth(todayStr)}` },
-        { value: "other", label: "Otra fecha" },
-      ]
-    : dueStr === todayStr
-    ? [
-        { value: "today", label: "Hoy · vence hoy" },
-        { value: "other", label: "Otra fecha" },
-      ]
-    : [
-        { value: "today", label: `Hoy · ${fmtDayMonth(todayStr)}` },
-        { value: "other", label: "Otra fecha" },
-      ];
+  // Si se borra el selector de fecha nativo (iOS/Android "Borrar") queda "":
+  // se usa hoy en vez de dejar el botón deshabilitado sin explicación.
+  const effectiveDate = date || toISO(new Date());
 
   const cats = useMemo(() => categories.filter((c) => c.type === type), [categories, type]);
   const cat = categories.find((c) => c.id === catId);
@@ -145,7 +112,7 @@ function EntryForm({
   // background (con rollback + toast si falla), así el modal cierra sin esperar
   function confirm() {
     const amount = Math.round(result * 100) / 100;
-    if (!amount || amount <= 0 || !catId || !effectiveDate) return;
+    if (!amount || amount <= 0 || !catId) return;
     const [y, m, d] = effectiveDate.split("-").map(Number);
     const dateObj = new Date(y, m - 1, d, 12);
     if (fromSub) void confirmSubscription(fromSub, { date: dateObj, amount, cat: catId, note: note.trim() });
@@ -186,7 +153,7 @@ function EntryForm({
   });
 
   const accent = type === "expense" ? "var(--red)" : "var(--green)";
-  const canSave = result > 0 && !!catId && !!effectiveDate;
+  const canSave = result > 0 && !!catId;
 
   return (
     <div className="um-modal-scrim" onClick={closeEntry}>
@@ -195,11 +162,10 @@ function EntryForm({
           {fromSub ? (
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-3)" }}>
-                Confirmar fijo
+                Registrar pago
               </div>
               <div style={{ fontWeight: 800, fontSize: 16, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {fromSub.name}
-                {dueStr ? ` · vence ${fmtDayMonth(dueStr)}` : ""}
               </div>
             </div>
           ) : (
@@ -259,50 +225,6 @@ function EntryForm({
                 <Icon name="ChevronRight" size={20} stroke={2.2} color="var(--text-3)" />
               </button>
 
-              {fromSub ? (
-                <>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
-                    <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
-                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
-                  </div>
-                  <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginTop: 2 }}>
-                    ¿Con qué fecha lo registrás?
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {dateChips.map((chip) => {
-                      const on = dateChoice === chip.value;
-                      return (
-                        <button
-                          key={chip.value}
-                          type="button"
-                          onClick={() => setDateChoice(chip.value)}
-                          style={{
-                            padding: "8px 14px",
-                            borderRadius: 999,
-                            border: on ? `1.5px solid ${accent}` : "1.5px solid var(--line)",
-                            background: on ? `color-mix(in srgb, ${accent} 14%, var(--surface))` : "var(--surface)",
-                            color: on ? accent : "var(--text-2)",
-                            fontWeight: 700,
-                            fontSize: 13,
-                            cursor: "pointer",
-                            fontFamily: "inherit",
-                          }}
-                        >
-                          {chip.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {dateChoice === "other" && (
-                    <input
-                      type="date"
-                      value={otherDate}
-                      onChange={(e) => setOtherDate(e.target.value)}
-                      style={{ border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "10px 12px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", outline: "none" }}
-                    />
-                  )}
-                </>
-              ) : (
                 <div style={{ display: "flex", gap: 10 }}>
                   <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
                     <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
@@ -313,7 +235,6 @@ function EntryForm({
                     <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", minWidth: 0 }} />
                   </label>
                 </div>
-              )}
             </div>
 
             <div style={{ padding: "4px 18px 18px", flex: "0 0 auto" }}>
@@ -330,9 +251,7 @@ function EntryForm({
               >
                 <Icon name="Check" size={20} stroke={2.6} color={canSave ? "#fff" : "var(--text-3)"} />
                 {fromSub
-                  ? !effectiveDate
-                    ? "Elegí la fecha"
-                    : `Confirmar ${type === "expense" ? "gasto" : "ingreso"} · ${fmtDayMonth(effectiveDate)}`
+                  ? `Registrar pago · ${fmtDayMonth(effectiveDate)}`
                   : edit
                   ? "Guardar cambios"
                   : type === "expense"

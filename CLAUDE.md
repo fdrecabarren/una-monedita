@@ -51,6 +51,7 @@ principal de Notion (publicada por `scripts/publish-notion-guide.ts`).
 - **USAR SIEMPRE** `queryDatabase()` de `lib/notion/client.ts` — llama REST `/v1/databases/{id}/query` directo
 - `pages.create` y `pages.update` siguen funcionando vía SDK normal
 - `pages.update` con `in_trash: true` para borrar
+- **Límite de bloques del plan gratis:** si el workspace agota sus bloques, Notion responde `403 restricted_resource` ("This workspace has used all of its free blocks") a todo `pages.create` (gastos, fijos, categorías) pero las lecturas y los `pages.update` siguen andando. En la app se ve como "Notion no deja crear más…". Se arregla en Notion (revisar el uso del plan del workspace, liberar espacio o mejorar el plan), no con código.
 
 ## Auth
 
@@ -58,6 +59,8 @@ principal de Notion (publicada por `scripts/publish-notion-guide.ts`).
 - Proxy auth: `proxy.ts` en raíz (Next.js 16 usa `proxy.ts`, NO `middleware.ts`)
 - La función debe exportarse como `proxy` (no `middleware`)
 - Rutas públicas: `/login`, `/api/auth`, `/api/seed`
+- `/api/*` sin sesión válida responde `401 {error:"Sesión vencida"}` (JSON, sin redirect); las páginas sí redirigen a `/login`
+- Fallos de Notion en las rutas de la API → `502 {error, code, message}` vía `lib/notion/errors.ts` `notionErrorResponse()` (loguea `[op] failed:` en Vercel Logs). Las credenciales de env/sesión se `.trim()`-ean en `lib/auth/session.ts`
 
 ## Estructura de páginas
 
@@ -68,7 +71,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | Resumen (donut A/B/C) | ✅ |
 | Movimientos (agrupado + edición) | ✅ |
 | Calendario (grilla + detalle día) | ✅ |
-| Fijos / recurrentes (Por pagar / Próximos / Pausados) | ✅ |
+| Fijos / recurrentes (lista única compacta + ✓ Registrar pago) | ✅ |
 | Categorías (CRUD + Tienda Iconos) | ✅ |
 | Ajustes (tema/acento/dashStyle/logout) | ✅ |
 
@@ -86,7 +89,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | `/api/categories/[id]` | PATCH/DELETE | Edita / archiva (soft-delete) |
 | `/api/subscriptions` | GET/POST | Lista recurrentes (`?status=`) / crea |
 | `/api/subscriptions/[id]` | PATCH/DELETE | Edita / borra (`in_trash`) |
-| `/api/subscriptions/[id]/pay` | POST | Confirmar: crea Transaction con la fecha elegida por el usuario y avanza `NextChargeDate` un período; `409` si `expectedNext` no coincide (ya se había confirmado) |
+| `/api/subscriptions/[id]/pay` | POST | Registrar pago: crea Transaction con la fecha elegida por el usuario (default hoy) y avanza `NextChargeDate` un período; `409` si `expectedNext` no coincide (ya se había registrado) |
 | `/api/subscriptions/migrate` | POST | Agrega a la DB Subscriptions las props que falten (idempotente) |
 | `/api/budgets` | GET | Lista presupuestos del mes (`?year=YYYY&month=1-12`) |
 | `/api/budgets` | POST | Crea presupuesto (name, limit, currency, month, categoryId?) |
@@ -103,17 +106,26 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   febrero) se clampea al último día — nunca salta de mes. Lógica en
   `lib/recurrence.ts`.
 - **Sin registro automático ni cron.** Un fijo es una plantilla: solo se
-  convierte en Transaction cuando el usuario toca el ✓ y confirma. Ese botón
-  abre el mismo modal calculadora de "Agregar gasto"
-  (`components/app/modal-new-entry.tsx`) precargado con monto/categoría/nota
-  del fijo, y pregunta con qué fecha registrarlo (chips Vencimiento / Hoy /
-  Otra fecha — sin preselección, el botón queda deshabilitado hasta elegir).
-  Al confirmar se crea la Transaction con esa fecha y `NextChargeDate` avanza
+  convierte en Transaction cuando el usuario toca el ✓ "Registrar pago" de su
+  fila (el día que paga o le debitan). Ese botón abre el mismo modal calculadora
+  de "Agregar gasto" (`components/app/modal-new-entry.tsx`) precargado con
+  monto/categoría/nota del fijo; la fecha propuesta es **hoy** y se puede
+  cambiar. Al confirmar se crea la Transaction con esa fecha, enlazada por
+  `Subscription` (constancia del día de cada pago: se ve en "Pagos registrados"
+  del editor) y `LastChargedDate` se actualiza; `NextChargeDate` avanza
   exactamente un período desde el vencimiento cubierto (`lib/recurrence.ts`
-  `addInterval`); si hay varios períodos atrasados, cada uno se confirma por
+  `addInterval`); si hay varios períodos atrasados, cada uno se registra por
   separado. Lógica compartida en `lib/notion/payments.ts` `chargeSubscription()`.
-  `AutoCreate` sigue existiendo en Notion por compatibilidad pero la app ya no
-  lo lee ni lo escribe.
+- Pantalla Fijos: una sola lista (activos por vencimiento, pausados al final,
+  cancelados ocultos). Cada fila muestra "Pendiente · vence X" (vencido o vence
+  hoy), "Pagado <fecha del último pago>" o "Próximo X", y el ✓ Registrar pago.
+  Encabezado: estimado mensual + contador "N/M pagados".
+- Editor de fijo (`modal-recurrente.tsx`): Tipo, Nombre, Monto, Categoría,
+  Frecuencia, Día del mes (o cada N días si Personalizada). Un fijo nuevo arranca
+  hoy y su primer vencimiento se deriva del día del mes.
+- `AutoCreate`, `AlertDaysBefore` y `Notes` siguen en Notion por compatibilidad
+  pero la app ya no los lee/edita (`AlertDaysBefore` se escribe con su default 3
+  al crear; `AutoCreate` ya no se escribe).
 - Antes de usar la feature en una base existente: Ajustes → Mantenimiento →
   **Preparar Notion** (llama `POST /api/subscriptions/migrate`, agrega
   `Type`/`DueDay`/`AutoCreate`/`LastChargedDate`/`EndDate` a la DB
@@ -162,7 +174,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 ## Componentes clave (`components/app/`)
 
 - `AppRoot.tsx` — StoreProvider + Shell, recibe initial data del server
-- `store.tsx` — context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, theme/dashStyle/accent)
+- `store.tsx` — context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, theme/dashStyle/accent). Los errores de mutación llegan al toast con el motivo real del servidor (`HttpError` / `failureText`); sesión vencida → aviso + redirect a /login
 - `Shell.tsx` — layout responsive (Sidebar desktop / BottomNav móvil), nav, ThemeToggle
 - `Icon.tsx` — `Icon` (Lucide vía registry) + `CatBubble`
 - `Donut.tsx` — donut SVG segmentado; `TrendBars.tsx` — mini-gráfico de barras (mismo enfoque casero, sin libs)

@@ -75,7 +75,7 @@ Cada fila = un movimiento (gasto, ingreso o transferencia).
 | `Account` | relation → Accounts | Cuenta origen |
 | `AccountTo` | relation → Accounts | Solo en `Transferencia` |
 | `Category` | relation → Categories | |
-| `Subscription` | relation → Subscriptions | Presente solo si la tx fue generada al confirmar un recurrente |
+| `Subscription` | relation → Subscriptions | Presente solo si la tx fue generada al registrar el pago de un recurrente |
 | `CreatedAt` | created_time | Solo lectura |
 
 **Crear una transacción de gasto:**
@@ -118,13 +118,15 @@ POST /v1/pages
 ### Subscriptions (gastos/ingresos recurrentes — "Fijos" en la app)
 
 Cada fila = una obligación periódica (gym, suscripciones, dominios, sueldo,
-etc.). Es una plantilla: no genera nada sola. Solo se "cobra" cuando el
-usuario confirma manualmente en la app (botón ✓ en Fijos → modal de gasto
-precargado, elige la fecha) — no hay cron ni cobro automático. Confirmar crea
-una fila en Transactions enlazada por `Subscription` y avanza
-`NextChargeDate` exactamente un período desde el vencimiento cubierto (no
-desde la fecha en que se confirma). Si hay varios períodos atrasados, cada
-uno se confirma por separado y el ítem sigue en "Por pagar" entre medio.
+etc.). Es una plantilla: no genera nada sola. La pantalla Fijos es una lista
+única; cada fila tiene un botón ✓ "Registrar pago" que el usuario toca el día
+que paga o le debitan (abre el modal de gasto precargado; la fecha propuesta es
+hoy y se puede cambiar) — no hay cron ni cobro automático. Registrar el pago
+crea una fila en Transactions enlazada por `Subscription` (así queda constancia
+de qué día se hizo cada pago) y avanza `NextChargeDate` exactamente un período
+desde el vencimiento cubierto (no desde la fecha del pago). Si hay varios
+períodos atrasados, cada uno se registra por separado y el ítem sigue
+"Pendiente" entre medio.
 
 | Propiedad | Tipo | Notas |
 |---|---|---|
@@ -136,19 +138,20 @@ uno se confirma por separado y el ítem sigue en "Por pagar" entre medio.
 | `CustomIntervalDays` | number | Solo si `Frequency = Personalizada`: cada cuántos días |
 | `DueDay` | number (1–31) | Día objetivo del mes para frecuencias mensuales y superiores (Mensual/Bimestral/Trimestral/Semestral/Anual). Si el mes no tiene ese día (ej. 31 en febrero), se usa el último día del mes — nunca se salta al mes siguiente |
 | `StartDate` | date | Desde cuándo rige |
-| `NextChargeDate` | date | Próximo cobro. Es el campo que gobierna todo: si `<= hoy` y `Status = Activa`, el ítem está vencido |
-| `LastChargedDate` | date | Última vez que se cobró efectivamente |
+| `NextChargeDate` | date | Próximo vencimiento. Es el campo que gobierna todo: si `<= hoy` y `Status = Activa`, el ítem está "Pendiente"; si es futuro, el período actual ya está pagado |
+| `LastChargedDate` | date | Fecha del último pago registrado (la que eligió el usuario) |
 | `EndDate` | date, opcional | Al pasarla, el próximo cobro que caiga después la marca `Status = Cancelada` automáticamente |
-| `AlertDaysBefore` | number | Ventana de aviso: la app lo muestra en "Por pagar" desde N días antes del vencimiento |
-| `AutoCreate` | checkbox | **Obsoleto — la app ya no lo lee ni lo escribe.** Todo fijo requiere confirmación manual del usuario. Queda en el schema por compatibilidad con datos viejos; no usarlo en lógica nueva |
+| `AlertDaysBefore` | number | **Sin uso en la app** (la lista ya no tiene ventana de aviso). Se sigue escribiendo el default `3` al crear un fijo; no usarlo en lógica nueva |
+| `AutoCreate` | checkbox | **Obsoleto — la app ya no lo lee, no lo escribe ni lo agrega con "Preparar Notion".** Todo fijo requiere que el usuario registre el pago. Queda en el schema por compatibilidad con datos viejos; no usarlo en lógica nueva |
 | `Status` | select | `Activa` \| `Pausada` \| `Cancelada`. Solo `Activa` se cobra |
-| `Notes` | rich_text | |
+| `Notes` | rich_text | Opcional; el editor de la app ya no lo muestra |
 | `Account` | relation → Accounts | Opcional |
 | `Category` | relation → Categories | Opcional — la Transaction generada hereda esta categoría |
 
-**Confirmar un recurrente (misma lógica que usa el botón "Confirmar" —
-ver `lib/notion/payments.ts` `chargeSubscription()`):**
-1. La fecha de la Transaction la elige el usuario (no es "hoy" por defecto).
+**Registrar el pago de un recurrente (misma lógica que usa el botón ✓ "Registrar
+pago" — ver `lib/notion/payments.ts` `chargeSubscription()`):**
+1. La fecha de la Transaction es la que elige el usuario (la app propone hoy y
+   se puede cambiar; un agente debe preguntarla).
 2. Calcular `NextChargeDate` nueva = una ocurrencia después de la
    `NextChargeDate` **actual** de la fila (el vencimiento que se está
    cubriendo), no después de la fecha elegida — respetando `Frequency`/
@@ -162,7 +165,7 @@ ver `lib/notion/payments.ts` `chargeSubscription()`):**
 
 No cobrar dos veces el mismo período: releer la fila y comparar su
 `NextChargeDate` contra la que se vio al decidir cobrar (`expectedNext`)
-antes de escribir — si cambió, alguien ya lo confirmó mientras tanto.
+antes de escribir — si cambió, alguien ya registró ese pago mientras tanto.
 
 ## Cómo operar (recetas para un agente)
 
@@ -193,7 +196,7 @@ fuente de verdad del monto, usar siempre `Amount`.
 ### Crear un fijo (gasto o ingreso recurrente)
 
 Ejemplo: gimnasio, $15000 ARS, todos los meses cerca del día 14 (queda en
-"Por pagar" hasta que Franco confirma — no hay cobro automático):
+"Pendiente" hasta que Franco registra el pago — no hay cobro automático):
 
 ```json
 POST /v1/pages
@@ -244,17 +247,17 @@ POST /v1/databases/36d5c48e-39b6-81fd-b57c-c1d4033101e1/query
 }
 ```
 
-Todos los vencidos (activos, `NextChargeDate <= hoy`) son "Por pagar" en la
-app — ningún fijo se cobra solo, no cobrarlos sin que Franco lo pida.
+Todos los vencidos (activos, `NextChargeDate <= hoy`) figuran "Pendiente" en la
+app — ningún fijo se cobra solo, no registrar pagos sin que Franco lo pida.
 
 ### Cobrar un fijo
 
-Mismos pasos que usa el botón "Confirmar" de la app
+Mismos pasos que usa el botón "Registrar pago" de la app
 (`chargeSubscription()` en `lib/notion/payments.ts`):
 
 1. **Releer la fila primero** (`GET /v1/pages/{id}`) y anotar su
    `NextChargeDate`. Si ya cambió respecto a lo que se vio al decidir cobrar,
-   alguien ya lo confirmó mientras tanto — no repetir.
+   alguien ya registró ese pago mientras tanto — no repetir.
 2. Definir la fecha del cobro (para un agente: preguntarle a Franco qué fecha
    usar, no asumir "hoy").
 3. Calcular la nueva `NextChargeDate` = una ocurrencia después de la
@@ -336,5 +339,5 @@ siguiente todavía (queda para un agente/cron futuro).
   (rompería las relaciones de transacciones históricas) — usar `Archived` en
   Categories/Accounts o `in_trash` en Transactions/Subscriptions.
 - **Antes de cobrar un recurrente**, siempre releer la fila (`Status`,
-  `NextChargeDate`, `LastChargedDate`) por si ya fue confirmada desde la app
+  `NextChargeDate`, `LastChargedDate`) por si ya se registró su pago desde la app
   (u otro agente) entre que se decidió actuar y que se ejecuta la escritura.

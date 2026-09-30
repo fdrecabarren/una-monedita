@@ -81,7 +81,6 @@ export const SubscriptionSchema = z.object({
   lastChargedDate: z.string().nullable(),
   endDate: z.string().nullable(),
   alertDaysBefore: z.number().default(3),
-  autoCreate: z.boolean().default(false),
   status: SubscriptionStatusSchema.nullable(),
   notes: z.string().nullable(),
   accountId: z.string().nullable(),

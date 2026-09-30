@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { updateTransaction, deleteTransaction } from "@/lib/notion/transactions";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { notionErrorResponse } from "@/lib/notion/errors";
 import { z } from "zod";
 
 const PatchSchema = z.object({
@@ -30,8 +31,12 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const tx = await updateTransaction(id, parsed.data, creds);
-  return NextResponse.json(tx);
+  try {
+    const tx = await updateTransaction(id, parsed.data, creds);
+    return NextResponse.json(tx);
+  } catch (err) {
+    return notionErrorResponse("transactions:update", err, "No se pudieron guardar los cambios en Notion");
+  }
 }
 
 export async function DELETE(
@@ -45,6 +50,10 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  await deleteTransaction(id, creds);
-  return NextResponse.json({ ok: true });
+  try {
+    await deleteTransaction(id, creds);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return notionErrorResponse("transactions:delete", err, "No se pudo eliminar en Notion");
+  }
 }
