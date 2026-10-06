@@ -29,6 +29,7 @@ import {
 import { type TxFilter, EMPTY_TX_FILTER } from "@/lib/tx-filter";
 import { addInterval } from "@/lib/recurrence";
 import { fmt } from "@/lib/format";
+import { closingCutoff, carryFor, openingBalance, type CarryResult } from "@/lib/balance";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -51,6 +52,10 @@ export interface UITx {
   // Fijo (Subscription) al que corresponde este movimiento, si lo registró el
   // botón "Registrar pago". Alimenta "Pagos registrados" en el editor del fijo.
   sub: string | null;
+  // Transferencia entre cuentas: no es ingreso ni gasto, no entra en totales ni saldo.
+  transfer: boolean;
+  // Moneda del movimiento. La app no convierte: el saldo suma todo sin conversión.
+  currency: string;
 }
 
 // Recurrentes (gastos/ingresos fijos). Dates stay as YYYY-MM-DD strings —
@@ -188,7 +193,29 @@ interface StoreValue {
   ) => Promise<void>;
   budgets: UIBudget[];
   setBudget: (categoryId: string, limit: number) => Promise<void>;
+  // ---- saldo acumulado ("dinero en mi poder") ----
+  initialYear: number;
+  // true = cada período arranca con lo que quedó del anterior; false = solo el período.
+  carryOver: boolean;
+  setCarryOver: (v: boolean) => void;
+  carry: CarryState;
+  retryHistory: () => void;
+  // saldo inicial (Notion · Accounts.InitialBalance); null mientras carga
+  initialBalance: number | null;
+  setInitialBalance: (n: number) => Promise<void>;
+  // todos los movimientos cargados (años en caché + historial), con optimistas
+  allTx: UITx[];
+  // saldo justo antes de `date` (exclusivo); null si todavía no se puede calcular
+  balanceBefore: (date: Date) => number | null;
+  // el rango visible depende de años que aún no se trajeron
+  rangePending: boolean;
 }
+
+export type CarryState =
+  | { status: "off" }
+  | { status: "loading" }
+  | { status: "error" }
+  | ({ status: "ready" } & CarryResult);
 
 export interface NewSubInput {
   name: string;
@@ -230,6 +257,8 @@ function txToUI(t: Transaction, byId: Record<string, UICategory>): UITx {
     note: t.notes || "",
     type,
     sub: t.subscriptionId,
+    transfer: t.type === "Transferencia",
+    currency: t.currency ?? "ARS",
   };
 }
 
@@ -363,6 +392,19 @@ export function StoreProvider({
     );
     return { [initialYear]: initialTransactions.map((t) => txToUI(t, seedById)) };
   });
+  // Años cuyo contenido llegó completo (del servidor o de la API). Distinto de
+  // "tiene entrada en txByYear": upsertTx puede crear un año con solo un movimiento
+  // optimista, y ese año no está cargado.
+  const [loadedYears, setLoadedYears] = useState<Set<number>>(() => new Set([initialYear]));
+  // Historial anterior a initialYear (saldo arrastrado). Se pide UNA vez y solo con
+  // el acumulado activo.
+  const [history, setHistory] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [carryOver, setCarryOverRaw] = useState(true);
+  const [initialBalance, setInitialBalanceRaw] = useState<number | null>(null);
+  const isLoaded = useCallback(
+    (y: number) => loadedYears.has(y) || (history === "ready" && y < initialYear),
+    [loadedYears, history, initialYear]
+  );
 
   const now = new Date();
   const [periodRaw, setPeriodRaw] = useState<Period>("Mes");
@@ -395,6 +437,7 @@ export function StoreProvider({
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
     const f = (localStorage.getItem("um.focus") as TxType) || "expense";
+    setCarryOverRaw(localStorage.getItem("um.carry") !== "0");
     const p = (localStorage.getItem("um.period") as Period) || "Mes";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from localStorage on mount
     setThemeRaw(t);
@@ -452,6 +495,10 @@ export function StoreProvider({
   const setCurrency = useCallback((v: AppCurrency) => {
     setCurrencyRaw(v);
     persist("um.currency", v);
+  }, []);
+  const setCarryOver = useCallback((v: boolean) => {
+    setCarryOverRaw(v);
+    persist("um.carry", v ? "1" : "0");
   }, []);
   const setFocus = useCallback((v: TxType) => {
     setFocusRaw(v);
@@ -556,7 +603,7 @@ export function StoreProvider({
   const inFlightYears = useRef<Set<number>>(new Set());
   const ensureYear = useCallback(
     async (y: number) => {
-      if (txByYear[y] || inFlightYears.current.has(y)) return;
+      if (isLoaded(y) || inFlightYears.current.has(y)) return;
       inFlightYears.current.add(y);
       setLoading(true);
       try {
@@ -564,7 +611,13 @@ export function StoreProvider({
         if (!res.ok) throw new Error(`GET /api/transactions?year=${y} → ${res.status}`);
         const data = await res.json();
         const list: Transaction[] = data.transactions || [];
-        setTxByYear((prev) => ({ ...prev, [y]: list.map((t) => txToUI(t, byId)) }));
+        // los optimistas (tmp-) que se agregaron mientras el pedido estaba en
+        // vuelo se conservan: si no, el fetch los pisa y el saldo da un salto
+        setTxByYear((prev) => ({
+          ...prev,
+          [y]: [...(prev[y] ?? []).filter((t) => t.id.startsWith("tmp-")), ...list.map((t) => txToUI(t, byId))],
+        }));
+        setLoadedYears((prev) => new Set(prev).add(y));
       } catch (err) {
         console.error(err);
         setSim("error");
@@ -573,7 +626,7 @@ export function StoreProvider({
         setLoading(false);
       }
     },
-    [txByYear, byId]
+    [isLoaded, byId]
   );
 
   const navMonth = useCallback(
@@ -581,19 +634,27 @@ export function StoreProvider({
       setSim((s) => (s === "empty" || s === "error" ? "normal" : s));
       const next = addMonthsClamped(anchor, delta);
       setAnchor(next);
-      if (!txByYear[next.getFullYear()]) void ensureYear(next.getFullYear());
+      if (!isLoaded(next.getFullYear())) void ensureYear(next.getFullYear());
     },
-    [anchor, txByYear, ensureYear]
+    [anchor, isLoaded, ensureYear]
   );
 
   // asegura en cache todos los años que tocan el rango visible y el de
   // comparación — cubre pills fijas, navRange y el selector de rango custom.
   useEffect(() => {
     const years = new Set<number>([...yearsIn(range), ...yearsIn(prevRange)]);
+    if (carryOver) {
+      // el saldo necesita todos los años desde initialYear hasta el corte
+      const last = closingCutoff(range, new Date()).until.getFullYear();
+      for (let y = initialYear; y <= last; y++) years.add(y);
+    }
     years.forEach((y) => {
-      if (!txByYear[y]) void ensureYear(y);
+      if (!isLoaded(y)) void ensureYear(y);
     });
-  }, [range, prevRange, txByYear, ensureYear]);
+  }, [range, prevRange, carryOver, initialYear, isLoaded, ensureYear]);
+
+  // rango visible con años todavía sin traer: evita mostrar un "Sin movimientos" falso
+  const rangePending = useMemo(() => yearsIn(range).some((y) => !isLoaded(y)), [range, isLoaded]);
 
   // presupuestos del mes que muestra el Calendario/anchor (son mensuales por
   // definición del schema de Notion — no siguen al rango del Resumen).
@@ -660,6 +721,7 @@ export function StoreProvider({
     let income = 0;
     let expense = 0;
     prevVisibleTx.forEach((x) => {
+      if (x.transfer) return;
       if (x.type === "income") income += x.amount;
       else expense += x.amount;
     });
@@ -670,7 +732,7 @@ export function StoreProvider({
     const totals: Record<string, number> = {};
     let grand = 0;
     visibleTx.forEach((x) => {
-      if (!x.cat || !byId[x.cat] || byId[x.cat].type !== focus) return;
+      if (x.transfer || !x.cat || !byId[x.cat] || byId[x.cat].type !== focus) return;
       totals[x.cat] = (totals[x.cat] || 0) + x.amount;
       grand += x.amount;
     });
@@ -690,11 +752,109 @@ export function StoreProvider({
     let income = 0;
     let expense = 0;
     visibleTx.forEach((x) => {
+      if (x.transfer) return;
       if (x.type === "income") income += x.amount;
       else expense += x.amount;
     });
     return { income, expense, balance: income - expense };
   }, [visibleTx]);
+
+  // ---- saldo acumulado ----
+  const allTx = useMemo(() => Object.values(txByYear).flat(), [txByYear]);
+
+  const loadHistory = useCallback(async () => {
+    setHistory("loading");
+    try {
+      const res = await fetch(`/api/transactions/history?before=${initialYear}-01-01`);
+      if (!res.ok) throw await httpError(res);
+      const data = await res.json();
+      const list: Transaction[] = data.transactions ?? [];
+      const byYear: Record<number, UITx[]> = {};
+      for (const t of list) {
+        const ui = txToUI(t, byId);
+        (byYear[ui.date.getFullYear()] ||= []).push(ui);
+      }
+      setTxByYear((prev) => {
+        const next = { ...prev };
+        for (const [y, items] of Object.entries(byYear)) {
+          next[Number(y)] = [...(prev[Number(y)] ?? []).filter((t) => t.id.startsWith("tmp-")), ...items];
+        }
+        return next;
+      });
+      setLoadedYears((prev) => {
+        const next = new Set(prev);
+        Object.keys(byYear).forEach((y) => next.add(Number(y)));
+        return next;
+      });
+      setHistory("ready");
+    } catch (err) {
+      console.error(err);
+      setHistory("error");
+    }
+  }, [initialYear, byId]);
+
+  // una sola llamada, y solo con el acumulado activo
+  useEffect(() => {
+    if (prefsReady && carryOver && !initialLoadError && history === "idle") void loadHistory();
+  }, [prefsReady, carryOver, initialLoadError, history, loadHistory]);
+
+  const retryHistory = useCallback(() => setHistory("idle"), []);
+
+  // saldo inicial: una vez al montar. Si Notion no tiene Accounts, queda en 0.
+  useEffect(() => {
+    if (!prefsReady || initialLoadError) return;
+    let cancelled = false;
+    fetch("/api/accounts/opening")
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`GET /api/accounts/opening → ${res.status}`))))
+      .then((d: { initialBalance?: number }) => {
+        if (!cancelled) setInitialBalanceRaw(typeof d.initialBalance === "number" ? d.initialBalance : 0);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setInitialBalanceRaw(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prefsReady, initialLoadError]);
+
+  const setInitialBalance = useCallback<StoreValue["setInitialBalance"]>(async (n) => {
+    const res = await fetch("/api/accounts/opening", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initialBalance: n }),
+    });
+    if (!res.ok) throw await httpError(res);
+    setInitialBalanceRaw(n);
+  }, []);
+
+  // Años completos desde initialYear hasta `lastYear` (y el historial anterior).
+  const ledgerReady = useCallback(
+    (lastYear: number) => {
+      if (!carryOver || initialLoadError || history !== "ready" || initialBalance === null) return false;
+      for (let y = initialYear; y <= lastYear; y++) if (!isLoaded(y)) return false;
+      return true;
+    },
+    [carryOver, initialLoadError, history, initialBalance, initialYear, isLoaded]
+  );
+
+  const carry = useMemo<CarryState>(() => {
+    if (!carryOver || sim !== "normal") return { status: "off" };
+    if (initialLoadError || history === "error") return { status: "error" };
+    const now = new Date();
+    const last = closingCutoff(range, now).until.getFullYear();
+    if (!ledgerReady(last)) return { status: "loading" };
+    if (yearsIn(range).some((y) => !isLoaded(y))) return { status: "loading" };
+    return { status: "ready", ...carryFor(allTx, range, now, initialBalance ?? 0) };
+  }, [carryOver, sim, initialLoadError, history, range, ledgerReady, isLoaded, allTx, initialBalance]);
+
+  const balanceBefore = useCallback(
+    (date: Date): number | null => {
+      if (!ledgerReady(new Date(date.getTime() - 1).getFullYear())) return null;
+      return openingBalance(allTx, date, initialBalance ?? 0);
+    },
+    [ledgerReady, allTx, initialBalance]
+  );
 
   // ---- mutations ----
   const upsertTx = useCallback((y: number, tx: UITx) => {
@@ -743,6 +903,8 @@ export function StoreProvider({
         note,
         type: category?.type ?? "expense",
         sub: null,
+        transfer: false,
+        currency,
       });
       void fetch("/api/transactions", {
         method: "POST",
@@ -979,6 +1141,8 @@ export function StoreProvider({
         note: input.note,
         type: prev.type,
         sub: prev.id,
+        transfer: false,
+        currency: prev.currency,
       });
       setSubscriptions((list) => list.map((s) => (s.id === prev.id ? optimisticSub : s)));
 
@@ -1076,6 +1240,16 @@ export function StoreProvider({
     confirmSubscription,
     budgets,
     setBudget,
+    initialYear,
+    carryOver,
+    setCarryOver,
+    carry,
+    retryHistory,
+    initialBalance,
+    setInitialBalance,
+    allTx,
+    balanceBefore,
+    rangePending,
   };
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;

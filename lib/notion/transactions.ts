@@ -27,6 +27,9 @@ function pageToTransaction(page: PageObjectResponse): Transaction {
 export interface GetTransactionsOptions {
   startDate?: string;
   endDate?: string;
+  // Solo movimientos con fecha estrictamente anterior (YYYY-MM-DD).
+  before?: string;
+  ascending?: boolean;
   categoryId?: string;
   accountId?: string;
   type?: TransactionType;
@@ -43,7 +46,7 @@ export async function getTransactions(opts: GetTransactionsOptions = {}, creds?:
     property: string;
     select?: { equals: string };
     relation?: { contains: string };
-    date?: { on_or_after?: string; on_or_before?: string };
+    date?: { on_or_after?: string; on_or_before?: string; before?: string };
   };
 
   const filters: PropertyFilter[] = [];
@@ -53,6 +56,7 @@ export async function getTransactions(opts: GetTransactionsOptions = {}, creds?:
   if (opts.accountId) filters.push({ property: "Account", relation: { contains: opts.accountId } });
   if (opts.startDate) filters.push({ property: "Date", date: { on_or_after: opts.startDate } });
   if (opts.endDate) filters.push({ property: "Date", date: { on_or_before: opts.endDate } });
+  if (opts.before) filters.push({ property: "Date", date: { before: opts.before } });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filter: any =
@@ -64,7 +68,7 @@ export async function getTransactions(opts: GetTransactionsOptions = {}, creds?:
     creds?.dbIds.transactions ?? DB_IDS.transactions,
     {
       filter,
-      sorts: [{ property: "Date", direction: "descending" }],
+      sorts: [{ property: "Date", direction: opts.ascending ? "ascending" : "descending" }],
       page_size: opts.pageSize ?? 50,
       ...(opts.startCursor ? { start_cursor: opts.startCursor } : {}),
     },
@@ -94,6 +98,21 @@ export async function getTransactionsByYear(year: number, creds?: NotionCreds): 
   let cursor: string | undefined = undefined;
   do {
     const res = await getTransactions({ startDate: start, endDate: end, pageSize: 100, startCursor: cursor }, creds);
+    all.push(...res.transactions);
+    cursor = res.hasMore && res.nextCursor ? res.nextCursor : undefined;
+  } while (cursor);
+  return all;
+}
+
+// Todo el historial anterior a `beforeISO` (exclusivo), paginado hasta agotar.
+// Alimenta el saldo acumulado: el cliente solo necesita los movimientos previos a
+// los años que ya carga por separado. Las páginas van en serie (sin ráfagas) para
+// no pisar el límite de pedidos de Notion.
+export async function getTransactionsBefore(beforeISO: string, creds?: NotionCreds): Promise<Transaction[]> {
+  const all: Transaction[] = [];
+  let cursor: string | undefined = undefined;
+  do {
+    const res = await getTransactions({ before: beforeISO, ascending: true, pageSize: 100, startCursor: cursor }, creds);
     all.push(...res.transactions);
     cursor = res.hasMore && res.nextCursor ? res.nextCursor : undefined;
   } while (cursor);
