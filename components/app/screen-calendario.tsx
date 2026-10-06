@@ -30,7 +30,7 @@ function DayRow({ x, cat, onClick }: { x: UITx; cat: UICategory; onClick: () => 
         <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{x.note || cat.name}</div>
         <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 600 }}>{cat.name}</div>
       </div>
-      <span className="num tnum" style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", flex: "0 0 auto", color: inc ? "var(--income)" : "var(--text)" }}>
+      <span className="num tnum" style={{ fontSize: 14.5, fontWeight: 600, whiteSpace: "nowrap", flex: "0 0 auto", color: inc ? "var(--income)" : "var(--text)" }}>
         {inc ? "+ " : "− "}
         {fmt(x.amount, currency)}
       </span>

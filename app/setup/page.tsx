@@ -86,7 +86,6 @@ export default function SetupPage() {
     fontSize: 16,
     fontFamily: "inherit",
     fontWeight: 600,
-    outline: "none",
   };
 
   return (

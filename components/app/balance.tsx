@@ -224,19 +224,16 @@ function Line({ label, value, strong = false, color }: { label: string; value: s
 export function BalanceSheet({ onClose }: { onClose: () => void }) {
   const { currency, period, range, rangeLabel, allTx, visibleTx, carryOver, carry } = useStore();
   const v = useBalanceView();
-  const now = useMemo(() => new Date(), []);
+  const [now] = useState(() => new Date());
   const lenDays = daysBetween(range.start, range.end);
   const units = unitsFor(period, lenDays);
   const [unit, setUnit] = useState<BucketUnit | null>(null);
   const activeUnit: BucketUnit | null = units.length ? (unit && units.includes(unit) ? unit : units[0]) : null;
 
-  const rows = useMemo(() => {
-    if (!activeUnit) return [];
-    const buckets = bucketsFor(range, activeUnit);
-    const opening = carry.status === "ready" ? carry.opening : 0;
-    const series = balanceSeries(allTx, buckets, opening, now);
-    return series.map((p, i) => ({ ...p, start: buckets[i].start, end: buckets[i].end }));
-  }, [activeUnit, range, allTx, carry, now]);
+  const openingForSeries = carry.status === "ready" ? carry.opening : 0;
+  // sin useMemo manual: el compilador de React lo memoiza solo
+  const buckets = activeUnit ? bucketsFor(range, activeUnit) : [];
+  const rows = balanceSeries(allTx, buckets, openingForSeries, now).map((p, i) => ({ ...p, start: buckets[i].start, end: buckets[i].end }));
 
   const withMoves = rows.filter((r) => r.income !== 0 || r.expense !== 0);
   const showCarry = v.carried && v.status === "ready";

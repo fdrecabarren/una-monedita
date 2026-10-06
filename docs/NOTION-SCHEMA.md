@@ -111,9 +111,11 @@ POST /v1/pages
 | `Name` | title | |
 | `Type` | select | `Banco` \| `Efectivo` \| `Tarjeta crédito` \| `Wallet virtual` \| `Cripto` |
 | `Currency` | select | `ARS` \| `USD` \| `EUR` \| `BTC` \| `ETH` \| `USDT` |
-| `InitialBalance` | number | |
+| `InitialBalance` | number | Saldo inicial de la app: lo que había antes del primer movimiento. La app lo lee/escribe de la cuenta "Principal" (o la primera no archivada) vía `/api/accounts/opening` y lo suma al saldo acumulado (Disponible) |
 | `Color` / `Icon` | rich_text | Igual convención que Categories |
 | `Archived` | checkbox | Soft-delete |
+
+> Los movimientos sin `Date` no entran en ningún total ni saldo de la app (los filtros de fecha de Notion los excluyen). Las `Transferencia` no cuentan como ingreso ni gasto.
 
 ### Subscriptions (gastos/ingresos recurrentes — "Fijos" en la app)
 

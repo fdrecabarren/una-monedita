@@ -18,14 +18,18 @@ App de finanzas personales de Franco Recabarren. Registra gastos e ingresos en N
 ## Design system: Monefy/UnaMonedita (warm + verde, claro/oscuro)
 
 Reemplaza al viejo minimalist-ui. Definido en `app/globals.css` con CSS vars por tema.
-- App = SPA client-side estilo Monefy: 4 pantallas (Resumen donut, Movimientos, Calendario, Categorías) + Ajustes, navegación interna.
-- Fuentes: **Nunito** (`--font-app`, UI), **Fraunces** (`--font-serif`, números display `.num`), Geist Mono.
-- Acento verde `--green` (variantes teal/bosque vía `[data-accent]`). Tema claro/oscuro vía `[data-theme]` en `.app-root`.
-- Paleta categorías `--cat-*`; gastos rojo `--red`, ingresos verde `--green`.
+- App = SPA client-side estilo Monefy: 4 pantallas (Resumen donut, Movimientos, Calendario, Categorías) + Fijos + Ajustes, navegación interna. Móvil: 5 pestañas (Categorías se abre desde Ajustes → "Categorías y presupuestos"); desktop: sidebar con las 6 y los botones Agregar gasto/ingreso arriba (atajos `g` / `i`).
+- Modales: todos usan `components/app/Sheet.tsx` (`role="dialog"`, foco que entra y vuelve, trap de Tab, Escape) + `SheetHeader` + `ConfirmRow` (confirmación destructiva dentro del sheet). Nunca dos sheets apilados.
+- Avisos: `Toast` (ui.tsx) dentro del Shell; `notice = { kind: "error" | "success", text }`; los errores no se cierran solos, los éxitos a los 2.5 s.
+- Fuentes: **Nunito** (`--font-app`, UI), **Fraunces** variable con ejes SOFT/opsz (`--font-serif`, números display `.num`; `.num-coin` = cifras redondas, solo para el Disponible). Nunca Fraunces por encima de 600.
+- **Un color = un significado** (tokens en `app/globals.css`): `--accent*` (botón primario, nav activa, anillo "hoy", foco; cambia con `[data-accent]` verde/teal/bosque), `--income*` (ingresos, fijo), `--expense*` (gastos, fijo), `--warn` (presupuesto al 80%), `--on-accent/--on-income/--on-expense` (texto sobre rellenos). Texto de ingreso/gasto usa `--income`/`--expense` (AA); `--income-fill`/`--expense-fill` son solo rellenos y barras. No usar `#fff` fijo ni `--green`/`--red` (ya no existen).
+- Tema: `Theme = "system" | "light" | "dark"` (default `system`). El tema resuelto y el acento viven en `<html data-theme data-accent>`; un script en `app/layout.tsx` los escribe antes del primer paint y el store los mantiene. Los tokens están en `:root` + `[data-theme]` para que resuelvan fuera de `.app-root`.
+- Escala: radios `--r-sm/md/lg/xl/pill` (8/12/16/22/999); `.card` / `.card-hero` (única receta de tarjeta, con borde); `.eyebrow`, `.caption`, `.amount`, `.sheet-title`, `.sr-only`; foco visible global (`:focus-visible`), `.field-wrap` para inputs sin borde propio; `prefers-reduced-motion` respetado. Texto mínimo 11px, objetivos táctiles 44px.
+- Paleta categorías `--cat-*`; el glifo de `CatBubble` se mezcla con `--text` (`--glyph-mix`) para contraste.
 - Iconos: **lucide-react** vía `lib/icon-registry.ts` (registro explícito ~180 nombres, tree-shaken) + `components/app/Icon.tsx`.
 - Categorías guardan `Icon` (nombre Lucide PascalCase) + `Color` (hex) en Notion.
 - Tienda de Iconos: catálogo en `lib/icon-catalog.ts` (`GROUPS`, `COLORS`, `ALL`).
-- Preferencias (theme/dashStyle/accent) persisten en localStorage (`um.theme/um.dash/um.accent`).
+- Preferencias (theme/dashStyle/accent/currency/focus/period/carry) persisten en localStorage (`um.theme/um.dash/um.accent/um.currency/um.focus/um.period/um.carry`).
 
 ## Notion — IDs y caveats críticos
 
@@ -84,6 +88,8 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | `/api/transactions` | GET | Lista por año (`?year=YYYY`, paginado) |
 | `/api/transactions` | POST | Crea transacción |
 | `/api/transactions/[id]` | PATCH/DELETE | Edita / borra (`in_trash`) |
+| `/api/transactions/history` | GET | `?before=YYYY-MM-DD`: todos los movimientos anteriores (exclusivo), paginado en serie. Alimenta el saldo arrastrado |
+| `/api/accounts/opening` | GET/PUT | Saldo inicial = `Accounts.InitialBalance` de la cuenta "Principal" (o la primera no archivada; PUT la crea si no existe) |
 | `/api/categories` | GET | Lista (`?kind=Gasto\|Ingreso`) |
 | `/api/categories` | POST | Crea categoría (name, kind, icon, color) |
 | `/api/categories/[id]` | PATCH/DELETE | Edita / archiva (soft-delete) |
@@ -151,6 +157,16 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   la comparativa (`ComparativeStats`) y el mini-gráfico de tendencia
   (`TrendBars.tsx`, baldes vía `bucketsFor(range)`).
 
+## Saldo acumulado ("dinero en mi poder")
+
+- Glosario (usar tal cual en la UI): **Balance diario/semanal/mensual/anual/del período** = ingresos − gastos del rango. **Saldo anterior** = saldo inicial + todo lo anterior al rango. **Disponible** = saldo anterior + balance del período, contado hasta hoy ("Disponible hoy" si el rango contiene hoy; "Saldo al 30 sep" si ya pasó; "Saldo previsto" si es futuro). Nunca usar "Saldo" y "Balance" para el mismo número.
+- Lógica pura en `lib/balance.ts` (`netBetween`, `openingBalance`, `closingCutoff`, `carryFor`, `balanceSeries`) + `balanceLabel`/`bucketsFor(range, unit)` en `lib/date-range.ts`. Tests: `scripts/test-balance.ts` (compilar con `tsc` + node; no hace falta instalar `tsx`).
+- Preferencia `carryOver` (`um.carry`, default Acumulado) en Ajustes → "Saldo": **Solo del período** (como antes) o **Acumulado**. Con Acumulado el store pide UNA vez `/api/transactions/history?before=<initialYear>-01-01` y deriva `carry` (`off | loading | error | ready`). Nunca se muestra una suma parcial: mientras faltan años, `loading`.
+- Cache por año: `loadedYears` (no `txByYear[y]`: `upsertTx` puede crear un año con solo un movimiento optimista). Al llegar un año se conservan los optimistas `tmp-`. `rangePending` evita el "Sin movimientos" falso mientras carga un año.
+- Saldo inicial: `Accounts.InitialBalance` vía `/api/accounts/opening`; en Ajustes se edita a mano o "Calcularlo desde lo que tengo hoy". Las transferencias no cuentan en totales ni saldo. La app no convierte monedas: el saldo suma todo sin conversión (la hoja "Tu saldo" avisa si se mezclan).
+- UI en `components/app/balance.tsx`: `Monedero` (barra inferior móvil, siempre visible), `BalanceCard` (hero desktop), `BalanceSheet` ("Tu saldo": ecuación + desglose por día/semana/mes). Firma visual: `Coin.tsx` (la monedita; con brote si el balance del período es positivo) solo junto al Disponible. Calendario: balance mensual, balance del día y saldo al cierre.
+- Los movimientos sin `Date` no entran en ningún total (los filtros de fecha de Notion los excluyen).
+
 ## Presupuestos por categoría
 
 - DB Notion: `Budgets` (`lib/notion/budgets.ts` — `getBudgetsByMonth`,
@@ -178,7 +194,8 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 - `Shell.tsx` — layout responsive (Sidebar desktop / BottomNav móvil), nav, ThemeToggle
 - `Icon.tsx` — `Icon` (Lucide vía registry) + `CatBubble`
 - `Donut.tsx` — donut SVG segmentado; `TrendBars.tsx` — mini-gráfico de barras (mismo enfoque casero, sin libs)
-- `ui.tsx` — PeriodPills, MonthNav (Calendario) / RangeNav (Resumen), CenterBalance, ActionButton, Segmented, StateView
+- `ui.tsx` — SegmentedControl (único estilo de selección; PeriodPills, FocusToggle, Segmented), MonthNav (Calendario) / RangeNav (Resumen), CenterBalance (total del foco, sin saldo), ActionButton, Toast, StateView
+- `Sheet.tsx` (Sheet, SheetHeader, ConfirmRow), `Coin.tsx`, `balance.tsx` (Monedero, BalanceCard, BalanceSheet)
 - `screen-{dashboard,movimientos,calendario,categorias,recurrentes,ajustes}.tsx`
 - `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda), `modal-recurrente.tsx` (fijos), `modal-range.tsx` (selector de rango del Resumen)
 - `lib/icon-registry.ts`, `lib/icon-catalog.ts`, `lib/format.ts`

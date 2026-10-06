@@ -437,7 +437,6 @@ export function StoreProvider({
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
     const f = (localStorage.getItem("um.focus") as TxType) || "expense";
-    setCarryOverRaw(localStorage.getItem("um.carry") !== "0");
     const p = (localStorage.getItem("um.period") as Period) || "Mes";
     // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from localStorage on mount
     setThemeRaw(t);
@@ -445,6 +444,7 @@ export function StoreProvider({
     setAccentRaw(a);
     setCurrencyRaw(c);
     setFocusRaw(f);
+    setCarryOverRaw(localStorage.getItem("um.carry") !== "0");
     if (p === "Personalizado") {
       const rs = localStorage.getItem("um.rangeStart");
       const re = localStorage.getItem("um.rangeEnd");
@@ -795,6 +795,7 @@ export function StoreProvider({
 
   // una sola llamada, y solo con el acumulado activo
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- dispara el fetch del historial (sistema externo)
     if (prefsReady && carryOver && !initialLoadError && history === "idle") void loadHistory();
   }, [prefsReady, carryOver, initialLoadError, history, loadHistory]);
 

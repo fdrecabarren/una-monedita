@@ -38,10 +38,12 @@ export function fmtDayMonth(iso: string): string {
 export function fmtShort(n: number, currency?: CurrencyCode): string {
   const { symbol } = currencyMeta(currency);
   const abs = Math.abs(n);
+  // signo "\u2212" tipogr\u00e1fico, igual que fmt (el "-" de toString se confunde con un guion)
+  const sign = n < 0 && Math.round(abs) !== 0 ? "\u2212\u00a0" : "";
   if (abs >= 1_000_000)
-    return symbol + "\u00a0" + (n / 1_000_000).toFixed(abs % 1_000_000 === 0 ? 0 : 1).replace(".", ",") + "M";
-  if (abs >= 1000) return symbol + "\u00a0" + Math.round(n / 1000) + "k";
-  return symbol + "\u00a0" + Math.round(n);
+    return sign + symbol + "\u00a0" + (abs / 1_000_000).toFixed(abs % 1_000_000 === 0 ? 0 : 1).replace(".", ",") + "M";
+  if (abs >= 1000) return sign + symbol + "\u00a0" + Math.round(abs / 1000) + "k";
+  return sign + symbol + "\u00a0" + Math.round(abs);
 }
 
 // "1.234,56" / "1234.56" / "1234,56" / "  $ 1 234 " → número. null si no es un número.

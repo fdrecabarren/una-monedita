@@ -95,7 +95,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               autoComplete="current-password"
-              style={{ width: "100%", padding: "13px 15px", borderRadius: 12, background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)", fontSize: 16, fontFamily: "inherit", fontWeight: 600, outline: "none" }}
+              style={{ width: "100%", padding: "13px 15px", borderRadius: 12, background: "var(--surface)", border: "1px solid var(--line)", color: "var(--text)", fontSize: 16, fontFamily: "inherit", fontWeight: 600 }}
             />
           </div>
 
