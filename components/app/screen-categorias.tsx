@@ -73,8 +73,8 @@ function CategoryEditor({ initial, onClose }: { initial: NonNullable<EditTarget>
               style={{ width: 64, height: 64, borderRadius: "50%", flex: "0 0 auto", cursor: "pointer", display: "grid", placeItems: "center", background: `color-mix(in srgb, ${color} 16%, var(--surface))`, border: `2px solid ${color}`, position: "relative" }}
             >
               <Icon name={icon} size={30} stroke={2} color={color} />
-              <span style={{ position: "absolute", right: -2, bottom: -2, width: 24, height: 24, borderRadius: "50%", background: "var(--green)", display: "grid", placeItems: "center", border: "2px solid var(--surface)" }}>
-                <Icon name="Pencil" size={12} stroke={2.6} color="#fff" />
+              <span style={{ position: "absolute", right: -2, bottom: -2, width: 24, height: 24, borderRadius: "50%", background: "var(--accent)", display: "grid", placeItems: "center", border: "2px solid var(--surface)" }}>
+                <Icon name="Pencil" size={12} stroke={2.6} color="var(--on-accent)" />
               </span>
             </button>
             <input
@@ -121,14 +121,14 @@ function CategoryEditor({ initial, onClose }: { initial: NonNullable<EditTarget>
 
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             {existing && (
-              <button onClick={remove} disabled={busy} className="icon-btn" style={{ width: 48, height: 48, borderRadius: 12, background: "var(--red-soft)", flex: "0 0 auto" }} aria-label="Eliminar">
-                <Icon name="Trash2" size={20} stroke={2} color="var(--red-600)" />
+              <button onClick={remove} disabled={busy} className="icon-btn" style={{ width: 48, height: 48, borderRadius: 12, background: "var(--expense-soft)", flex: "0 0 auto" }} aria-label="Eliminar">
+                <Icon name="Trash2" size={20} stroke={2} color="var(--expense)" />
               </button>
             )}
             <button
               onClick={save}
               disabled={busy}
-              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit", background: "var(--green)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15, opacity: busy ? 0.7 : 1 }}
+              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15, opacity: busy ? 0.7 : 1 }}
             >
               {isNew ? "Crear categoría" : "Guardar cambios"}
             </button>
@@ -151,7 +151,7 @@ function CatCard({ cat, onClick }: { cat: UICategory; onClick: () => void }) {
     <button
       onClick={onClick}
       className="cat-card"
-      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "16px 8px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--line)", cursor: "pointer", fontFamily: "inherit", boxShadow: "var(--shadow-card)" }}
+      style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 9, padding: "16px 8px", borderRadius: 16, background: "var(--surface)", border: "1px solid var(--line)", cursor: "pointer", fontFamily: "inherit" }}
     >
       <CatBubble icon={cat.icon} color={cat.color} size={52} stroke={2} />
       <div style={{ fontWeight: 700, fontSize: 13, color: "var(--text)", textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{cat.name}</div>

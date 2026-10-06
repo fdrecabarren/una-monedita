@@ -36,9 +36,9 @@ function FreqPills({ value, onChange }: { value: Frequency; onChange: (v: Freque
             style={{
               padding: "8px 14px",
               borderRadius: 999,
-              border: on ? "1.5px solid var(--green)" : "1.5px solid var(--line)",
-              background: on ? "var(--green-soft)" : "var(--surface)",
-              color: on ? "var(--green-700)" : "var(--text-2)",
+              border: on ? "1.5px solid var(--accent)" : "1.5px solid var(--line)",
+              background: on ? "var(--accent-soft)" : "var(--surface)",
+              color: on ? "var(--accent-ink)" : "var(--text-2)",
               fontWeight: 700,
               fontSize: 13,
               cursor: "pointer",
@@ -286,7 +286,7 @@ export function SubEditor({
           )}
 
           {error && (
-            <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--red-600)", lineHeight: 1.4 }}>
+            <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--expense)", lineHeight: 1.4 }}>
               {error}
             </div>
           )}
@@ -298,10 +298,10 @@ export function SubEditor({
                   onClick={remove}
                   disabled={busy}
                   className="icon-btn"
-                  style={{ width: 48, height: 48, borderRadius: 12, background: "var(--red-soft)", flex: "0 0 auto" }}
+                  style={{ width: 48, height: 48, borderRadius: 12, background: "var(--expense-soft)", flex: "0 0 auto" }}
                   aria-label="Eliminar"
                 >
-                  <Icon name="Trash2" size={20} stroke={2} color="var(--red-600)" />
+                  <Icon name="Trash2" size={20} stroke={2} color="var(--expense)" />
                 </button>
                 <button
                   onClick={togglePause}
@@ -318,7 +318,7 @@ export function SubEditor({
             <button
               onClick={save}
               disabled={busy}
-              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit", background: "var(--green)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15, opacity: busy ? 0.7 : 1 }}
+              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15, opacity: busy ? 0.7 : 1 }}
             >
               {isNew ? "Crear fijo" : "Guardar cambios"}
             </button>

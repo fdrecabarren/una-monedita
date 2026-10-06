@@ -21,7 +21,7 @@ function Toast() {
         background: "var(--surface)",
         border: "1px solid var(--line)",
         boxShadow: "var(--shadow-card)",
-        color: "var(--red-600)",
+        color: "var(--expense)",
         fontWeight: 700,
         fontSize: 14,
         width: "max-content",

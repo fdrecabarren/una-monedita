@@ -97,7 +97,7 @@ export function IconStoreModal({
                     fontSize: 12.5,
                     whiteSpace: "nowrap",
                     color: on ? "var(--on-accent)" : "var(--text-2)",
-                    background: on ? "var(--green)" : "var(--bg-2)",
+                    background: on ? "var(--accent)" : "var(--bg-2)",
                   }}
                 >
                   {g.name}

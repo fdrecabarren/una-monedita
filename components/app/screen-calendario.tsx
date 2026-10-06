@@ -30,7 +30,7 @@ function DayRow({ x, cat, onClick }: { x: UITx; cat: UICategory; onClick: () => 
         <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{x.note || cat.name}</div>
         <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 600 }}>{cat.name}</div>
       </div>
-      <span className="num tnum" style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", flex: "0 0 auto", color: inc ? "var(--green)" : "var(--text)" }}>
+      <span className="num tnum" style={{ fontSize: 14.5, fontWeight: 700, whiteSpace: "nowrap", flex: "0 0 auto", color: inc ? "var(--income)" : "var(--text)" }}>
         {inc ? "+ " : "− "}
         {fmt(x.amount, currency)}
       </span>
@@ -106,10 +106,10 @@ export function Calendario() {
           borderRadius: wide ? 13 : 11,
           cursor: "pointer",
           fontFamily: "inherit",
-          border: isToday && !on ? "1.5px solid var(--green)" : "1.5px solid transparent",
-          background: on ? "var(--green)" : txs.length ? "var(--surface)" : "transparent",
-          color: on ? "var(--on-accent)" : txs.length ? "var(--text)" : "var(--text-3)",
-          boxShadow: !on && txs.length ? "var(--shadow-card)" : "none",
+          border: isToday && !on ? "2px solid var(--accent)" : txs.length && !on ? "1.5px solid var(--line)" : "1.5px solid transparent",
+          background: on ? "var(--text)" : txs.length ? "var(--surface)" : "transparent",
+          color: on ? "var(--surface)" : txs.length ? "var(--text)" : "var(--text-3)",
+          
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
@@ -123,7 +123,7 @@ export function Calendario() {
         <span>{d}</span>
         <span style={{ display: "flex", gap: wide ? 3 : 2.5, height: wide ? 5 : 4, alignItems: "center" }}>
           {colors.map((c, i) => (
-            <span key={i} style={{ width: wide ? 5 : 4, height: wide ? 5 : 4, borderRadius: 999, background: on ? "rgba(255,255,255,.92)" : c }} />
+            <span key={i} style={{ width: wide ? 5 : 4, height: wide ? 5 : 4, borderRadius: 999, background: on ? "var(--surface)" : c }} />
           ))}
         </span>
       </button>
@@ -134,7 +134,7 @@ export function Calendario() {
     <div style={{ width: "100%", maxWidth: gridMaxWidth, margin: "0 auto" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap, marginBottom: wide ? 6 : 5 }}>
         {WEEKDAYS.map((w) => (
-          <div key={w} style={{ textAlign: "center", fontSize: wide ? 11 : 10, fontWeight: 800, letterSpacing: ".03em", color: "var(--text-3)", textTransform: "uppercase" }}>{w}</div>
+          <div key={w} style={{ textAlign: "center", fontSize: 12, fontWeight: 800, letterSpacing: ".06em", color: "var(--text-3)", textTransform: "uppercase" }}>{w}</div>
         ))}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap }}>
@@ -153,7 +153,7 @@ export function Calendario() {
     <div style={{ display: "flex", flexDirection: "column", height: wide ? "100%" : "auto" }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
         <div>
-          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-3)" }}>{WEEKDAYS_FULL[dateObj.getDay()]}</div>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-3)" }}>{WEEKDAYS_FULL[dateObj.getDay()]}</div>
           <div className="num" style={{ fontWeight: 600, fontSize: 23, lineHeight: 1.15, marginTop: 2, whiteSpace: "nowrap" }}>
             {selDay} de {MONTHS_FULL[month].toLowerCase()}
           </div>
@@ -162,9 +162,9 @@ export function Calendario() {
           onClick={() => openEntry("expense", new Date(year, month, selDay))}
           className="fab-btn"
           aria-label="Agregar movimiento en este día"
-          style={{ width: 40, height: 40, borderRadius: 12, flex: "0 0 auto", border: "none", cursor: "pointer", background: "var(--green)", color: "#fff", display: "grid", placeItems: "center", boxShadow: "var(--shadow-fab)" }}
+          style={{ width: 44, height: 44, borderRadius: 12, flex: "0 0 auto", border: "none", cursor: "pointer", background: "var(--accent)", color: "var(--on-accent)", display: "grid", placeItems: "center", boxShadow: "var(--shadow-fab)" }}
         >
-          <Icon name="Plus" size={22} stroke={2.6} color="#fff" />
+          <Icon name="Plus" size={22} stroke={2.6} color="var(--on-accent)" />
         </button>
       </div>
 
@@ -172,15 +172,15 @@ export function Calendario() {
         <>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             {dInc > 0 && (
-              <div style={{ flex: 1, background: "var(--green-soft)", borderRadius: 12, padding: "9px 12px" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--green-700)" }}>Ingresos</div>
-                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--green-700)" }}>{fmt(dInc, currency)}</div>
+              <div style={{ flex: 1, background: "var(--income-soft)", borderRadius: 12, padding: "9px 12px" }}>
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--income)" }}>Ingresos</div>
+                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--income)" }}>{fmt(dInc, currency)}</div>
               </div>
             )}
             {dExp > 0 && (
-              <div style={{ flex: 1, background: "var(--red-soft)", borderRadius: 12, padding: "9px 12px" }}>
-                <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--red-600)" }}>Gastos</div>
-                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--red-600)" }}>{fmt(dExp, currency)}</div>
+              <div style={{ flex: 1, background: "var(--expense-soft)", borderRadius: 12, padding: "9px 12px" }}>
+                <div style={{ fontSize: 12, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--expense)" }}>Gastos</div>
+                <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color: "var(--expense)" }}>{fmt(dExp, currency)}</div>
               </div>
             )}
           </div>
@@ -200,7 +200,7 @@ export function Calendario() {
           <div style={{ fontWeight: 700, fontSize: 15, color: "var(--text-2)" }}>Sin movimientos este día</div>
           <button
             onClick={() => openEntry("expense", new Date(year, month, selDay))}
-            style={{ padding: "9px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--green-soft)", color: "var(--green-700)", fontWeight: 800, fontSize: 13.5 }}
+            style={{ padding: "9px 18px", borderRadius: 999, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13.5 }}
           >
             Agregar movimiento
           </button>
@@ -218,7 +218,7 @@ export function Calendario() {
         </div>
         <div style={{ display: "flex", gap: 28, flex: 1, minHeight: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>{grid}</div>
-          <div style={{ width: 360, flex: "0 0 auto", background: "var(--surface)", borderRadius: 18, border: "1px solid var(--line)", boxShadow: "var(--shadow-card)", padding: "18px 18px", display: "flex", flexDirection: "column" }}>
+          <div style={{ width: 360, flex: "0 0 auto", background: "var(--surface)", borderRadius: 18, border: "1px solid var(--line)", padding: "18px 18px", display: "flex", flexDirection: "column" }}>
             {detail}
           </div>
         </div>

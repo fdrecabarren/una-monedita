@@ -100,13 +100,13 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p style={{ fontSize: 13.5, color: "var(--red-600)", background: "var(--red-soft)", borderRadius: 10, padding: "10px 12px", fontWeight: 600 }}>{error}</p>
+            <p style={{ fontSize: 13.5, color: "var(--expense)", background: "var(--expense-soft)", borderRadius: 10, padding: "10px 12px", fontWeight: 600 }}>{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading || !password}
-            style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: loading || !password ? "var(--bg-2)" : "var(--green)", color: loading || !password ? "var(--text-3)" : "#fff", fontWeight: 800, fontSize: 15, cursor: loading || !password ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: loading || !password ? "var(--bg-2)" : "var(--accent)", color: loading || !password ? "var(--text-3)" : "var(--on-accent)", fontWeight: 800, fontSize: 15, cursor: loading || !password ? "not-allowed" : "pointer", fontFamily: "inherit" }}
           >
             {loading ? "Ingresando…" : "Ingresar"}
           </button>

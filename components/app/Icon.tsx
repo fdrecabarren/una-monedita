@@ -69,7 +69,7 @@ export function CatBubble({
       style={s}
       className="cat-bubble"
     >
-      <Icon name={icon} size={Math.round(size * 0.48)} stroke={stroke} color={color} />
+      <Icon name={icon} size={Math.round(size * 0.48)} stroke={stroke} color={`color-mix(in srgb, ${color} var(--glyph-mix), var(--text))`} />
     </div>
   );
 }

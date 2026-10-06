@@ -104,7 +104,7 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
                 <button
                   type="button"
                   onClick={() => setDraft((d) => ({ ...d, cats: [] }))}
-                  style={{ border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--green-700)", fontSize: 12.5, fontWeight: 800 }}
+                  style={{ border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--accent-ink)", fontSize: 12.5, fontWeight: 800 }}
                 >
                   Limpiar selección
                 </button>
@@ -138,7 +138,7 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
                   >
                     {on && (
                       <div style={{ position: "absolute", top: 6, right: 6, width: 18, height: 18, borderRadius: "50%", background: c.color, display: "grid", placeItems: "center" }}>
-                        <Icon name="Check" size={12} stroke={3} color="#fff" />
+                        <Icon name="Check" size={12} stroke={3} color="var(--surface)" />
                       </div>
                     )}
                     <CatBubble icon={c.icon} color={c.color} size={44} stroke={2} />
@@ -158,7 +158,7 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               onClick={apply}
-              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--green)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
+              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
             >
               Aplicar
             </button>

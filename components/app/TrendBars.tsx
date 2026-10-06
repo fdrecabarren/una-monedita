@@ -13,7 +13,7 @@ export interface TrendPoint {
 export function TrendBars({
   data,
   height = 64,
-  color = "var(--red)",
+  color = "var(--expense-fill)",
 }: {
   data: TrendPoint[];
   height?: number;

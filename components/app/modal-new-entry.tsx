@@ -31,7 +31,7 @@ function Key({ label, onClick, variant, accent }: { label: ReactNode; onClick: (
       onClick={onClick}
       className="key-btn"
       style={{
-        border: "none",
+        border: "1px solid var(--line)",
         cursor: "pointer",
         fontFamily: "inherit",
         borderRadius: 14,
@@ -42,7 +42,6 @@ function Key({ label, onClick, variant, accent }: { label: ReactNode; onClick: (
         display: "grid",
         placeItems: "center",
         height: 54,
-        boxShadow: "var(--shadow-card)",
       }}
     >
       {label}
@@ -152,7 +151,9 @@ function EntryForm({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const accent = type === "expense" ? "var(--red)" : "var(--green)";
+  const accent = type === "expense" ? "var(--expense)" : "var(--income)";
+  const fill = type === "expense" ? "var(--expense-fill)" : "var(--income-fill)";
+  const onFill = type === "expense" ? "var(--on-expense)" : "var(--on-income)";
   const canSave = result > 0 && !!catId;
 
   return (
@@ -174,8 +175,8 @@ function EntryForm({
             </div>
           )}
           {edit && !fromSub && (
-            <button className="icon-btn" onClick={remove} aria-label="Eliminar" style={{ background: "var(--red-soft)" }}>
-              <Icon name="Trash2" size={19} stroke={2} color="var(--red-600)" />
+            <button className="icon-btn" onClick={remove} aria-label="Eliminar" style={{ background: "var(--expense-soft)" }}>
+              <Icon name="Trash2" size={19} stroke={2} color="var(--expense)" />
             </button>
           )}
           <button className="icon-btn" onClick={closeEntry} aria-label="Cerrar">
@@ -247,9 +248,9 @@ function EntryForm({
               <button
                 onClick={confirm}
                 disabled={!canSave}
-                style={{ marginTop: 12, width: "100%", padding: "15px", borderRadius: 14, border: "none", fontFamily: "inherit", background: canSave ? accent : "var(--bg-2)", color: canSave ? "#fff" : "var(--text-3)", fontWeight: 800, fontSize: 16, cursor: canSave ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}
+                style={{ marginTop: 12, width: "100%", padding: "15px", borderRadius: 14, border: "none", fontFamily: "inherit", background: canSave ? fill : "var(--bg-2)", color: canSave ? onFill : "var(--text-3)", fontWeight: 800, fontSize: 16, cursor: canSave ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}
               >
-                <Icon name="Check" size={20} stroke={2.6} color={canSave ? "#fff" : "var(--text-3)"} />
+                <Icon name="Check" size={20} stroke={2.6} color={canSave ? onFill : "var(--text-3)"} />
                 {fromSub
                   ? `Registrar pago · ${fmtDayMonth(effectiveDate)}`
                   : edit

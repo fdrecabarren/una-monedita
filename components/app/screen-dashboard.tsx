@@ -74,7 +74,7 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, gap: 8 }}>
                 <span style={{ fontWeight: 700, fontSize: 14, color: "var(--text)" }}>{b.name}</span>
-                <span className="num tnum" style={{ fontWeight: 600, fontSize: 14, color: over ? "var(--red-600)" : "var(--text)" }}>
+                <span className="num tnum" style={{ fontWeight: 600, fontSize: 14, color: over ? "var(--expense)" : "var(--text)" }}>
                   {budget ? `${fmt(b.total, currency)} de ${fmt(budget.limit, currency)}` : fmt(b.total, currency)}
                 </span>
               </div>
@@ -82,7 +82,7 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
                 <div style={{ width: (budgetPct ?? b.pct) * 100 + "%", height: "100%", borderRadius: 999, background: barColor }} />
               </div>
             </div>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: over ? "var(--red-600)" : "var(--text-3)", width: 32, textAlign: "right" }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: over ? "var(--expense)" : "var(--text-3)", width: 32, textAlign: "right" }}>
               {Math.round((budgetPct ?? b.pct) * 100)}%
             </span>
           </button>
@@ -152,7 +152,7 @@ function ComparativeStats() {
       {deltaPct !== null && (
         <StatTile
           label={`vs ${formatRangeLabel(prevRange, period)}`}
-          color={good ? "var(--green-700)" : "var(--red-600)"}
+          color={good ? "var(--green-700)" : "var(--expense)"}
           value={`${Math.abs(Math.round(deltaPct))}%`}
         />
       )}
@@ -260,7 +260,7 @@ export function DashboardMobile() {
                 <CatBubble icon={b.icon} color={b.color} size={34} stroke={2} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</div>
-                  <div className="num tnum" style={{ fontSize: 11.5, color: over ? "var(--red-600)" : "var(--text-3)", fontWeight: 600 }}>
+                  <div className="num tnum" style={{ fontSize: 11.5, color: over ? "var(--expense)" : "var(--text-3)", fontWeight: 600 }}>
                     {bud ? `${fmtShort(b.total, currency)} / ${fmtShort(bud.limit, currency)}` : `${Math.round(b.pct * 100)}% · ${fmtShort(b.total, currency)}`}
                   </div>
                   {pct !== null && (

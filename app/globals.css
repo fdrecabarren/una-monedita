@@ -1,22 +1,23 @@
 @import "tailwindcss";
 
 /* ==========================================================================
-   UnaMonedita — Monefy-style theme (warm base + green accent, light/dark).
+   UnaMonedita — warm base + accent, light/dark/system.
    Fonts via next/font: --font-app (Nunito), --font-serif (Fraunces),
    --font-geist-mono (Geist Mono).
+
+   Regla de color: un color = un significado.
+   - --accent*      : SOLO botón primario, nav activa, anillo "hoy", focus. Cambia
+                      con [data-accent] (verde / teal / bosque).
+   - --income*      : ingresos. Fijo, no cambia con el acento.
+   - --expense*     : gastos. Fijo.
+   - --warn         : aviso de presupuesto al 80%.
+   Los tokens viven en :root + [data-theme] para que también resuelvan fuera de
+   .app-root (p. ej. el Toast). El tema resuelto ("light"|"dark") se escribe en
+   <html data-theme> antes del primer paint (script en app/layout.tsx).
    ========================================================================== */
 
 :root {
   --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
-
-  /* ---- Monefy-style accents (default = verde) ---- */
-  --green: #2fa86a;
-  --green-600: #268a57;
-  --green-700: #1e7146;
-  --green-soft: #e3f3ea;
-  --red: #e0584a;
-  --red-600: #c8453a;
-  --red-soft: #fae3df;
 
   /* ---- Category palette ---- */
   --cat-food: #ff8a5c;
@@ -34,12 +35,25 @@
   --cat-salary: #2fa86a;
   --cat-other: #9aa0a6;
 
-  /* shared */
-  --shadow-card: 0 1px 0 rgba(25, 24, 23, 0.04);
+  /* ---- Radios ---- */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 22px;
+  --r-pill: 999px;
+
   --shadow-modal: 0 8px 24px rgba(25, 24, 23, 0.12);
+
+  /* TEMPORAL: alias legacy hasta migrar Shell, ui, screen-dashboard y AppRoot (plan Fase 2/5). Borrar al terminar. */
+  --green: var(--accent);
+  --green-700: var(--accent-ink);
+  --green-soft: var(--accent-soft);
+  --red: var(--expense-fill);
+  --shadow-card: none;
 }
 
 /* ============ LIGHT (default) ============ */
+:root,
 [data-theme="light"] {
   --bg: #f4f3ee;
   --bg-2: #eeede6;
@@ -49,8 +63,27 @@
   --line-strong: #d3ccbd;
   --text: #211f1c;
   --text-2: #5a554e;
-  --text-3: #938c81;
+  --text-3: #6e685e;
+
+  --accent: #2fa86a;
+  --accent-ink: #1e7146;
+  --accent-soft: #e3f3ea;
   --on-accent: #ffffff;
+
+  --income: #1e7146;
+  --income-fill: #2fa86a;
+  --income-soft: #e3f3ea;
+
+  --expense: #b83d33;
+  --expense-fill: #e0584a;
+  --expense-soft: #fae3df;
+  --on-income: #ffffff;
+  --on-expense: #ffffff;
+
+  --warn: #9a6412;
+  --glyph-mix: 55%;
+  --coin-face: #5ce8c0;
+
   --shadow-soft: 0 1px 2px rgba(25, 24, 23, 0.05), 0 8px 24px rgba(25, 24, 23, 0.06);
   --shadow-fab: 0 6px 16px rgba(31, 113, 70, 0.28);
   --ring: rgba(47, 168, 106, 0.3);
@@ -67,45 +100,53 @@
   --line-strong: #46413a;
   --text: #f3f1ea;
   --text-2: #c5beb2;
-  --text-3: #8c8478;
+  --text-3: #9d958a;
+
+  --accent: #3ec47c;
+  --accent-ink: #3ec47c;
+  --accent-soft: #1c2c22;
   --on-accent: #0e1a12;
-  --green: #3ec47c;
-  --green-600: #36ad6e;
-  --green-700: #2c8e5a;
-  --green-soft: #1c2c22;
-  --red: #ef6b5d;
-  --red-600: #d8554a;
-  --red-soft: #2e1f1c;
+
+  --income: #3ec47c;
+  --income-fill: #3ec47c;
+  --income-soft: #1c2c22;
+
+  --expense: #ef6b5d;
+  --expense-fill: #ef6b5d;
+  --expense-soft: #2e1f1c;
+  --on-income: #0e1a12;
+  --on-expense: #1a0e0c;
+
+  --warn: #e0a640;
+  --glyph-mix: 100%;
+  --coin-face: #1c2c22;
+
   --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 28px rgba(0, 0, 0, 0.45);
   --shadow-fab: 0 6px 18px rgba(0, 0, 0, 0.5);
   --ring: rgba(62, 196, 124, 0.32);
   color-scheme: dark;
 }
 
-/* ---- Accent overrides ---- */
+/* ---- Accent overrides (solo tokens --accent*; ingresos no se tocan) ---- */
 [data-accent="teal"] {
-  --green: #1aa6a0;
-  --green-600: #158a85;
-  --green-700: #0f6f6b;
-  --green-soft: #dcf1f0;
+  --accent: #1aa6a0;
+  --accent-ink: #0f6f6b;
+  --accent-soft: #dcf1f0;
 }
 [data-accent="bosque"] {
-  --green: #3f8f5b;
-  --green-600: #347a4c;
-  --green-700: #2a623d;
-  --green-soft: #e2efe6;
+  --accent: #3f8f5b;
+  --accent-ink: #2a623d;
+  --accent-soft: #e2efe6;
 }
 [data-theme="dark"][data-accent="teal"] {
-  --green: #2fc7c0;
-  --green-600: #28ada7;
-  --green-700: #1f8a85;
-  --green-soft: #13302e;
+  --accent: #2fc7c0;
+  --accent-ink: #2fc7c0;
+  --accent-soft: #13302e;
 }
 [data-theme="dark"][data-accent="bosque"] {
-  --green: #56b377;
-  --green-600: #489c66;
-  --green-700: #3a7f53;
-  --green-soft: #192a1f;
+  --accent: #56b377;
+  --accent-ink: #56b377;
+  --accent-soft: #192a1f;
 }
 
 * {
@@ -116,6 +157,7 @@ html,
 body {
   margin: 0;
   height: 100%;
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
@@ -136,12 +178,93 @@ body {
   font-size: 16px;
 }
 
+/* ---- Foco visible (teclado) ---- */
+.app-root :focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+}
+.app-root input:focus-visible,
+.app-root textarea:focus-visible,
+.app-root select:focus-visible {
+  outline-offset: 0;
+}
+/* Contenedor de un input sin borde propio: el aro va en el wrapper. */
+.field-wrap:focus-within {
+  box-shadow: 0 0 0 2px var(--accent-ink);
+}
+.field-wrap input:focus-visible,
+.field-wrap textarea:focus-visible {
+  outline: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---- Tipografía ---- */
 .num {
   font-family: var(--font-serif), ui-serif, Georgia, serif;
   font-variant-numeric: tabular-nums;
 }
 .tnum {
   font-variant-numeric: tabular-nums;
+}
+.eyebrow {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+.caption {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.amount {
+  font-family: var(--font-serif), ui-serif, Georgia, serif;
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+.sheet-title {
+  font-family: var(--font-serif), ui-serif, Georgia, serif;
+  font-size: 20px;
+  line-height: 26px;
+  font-weight: 600;
+}
+/* Firma: cifras redondas como monedas, solo en el Disponible. */
+.num-coin {
+  font-family: var(--font-serif), ui-serif, Georgia, serif;
+  font-variant-numeric: tabular-nums;
+  font-variation-settings: "SOFT" 100, "opsz" 72;
+  font-weight: 600;
+}
+
+/* ---- Tarjetas: una sola receta ---- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 12px 16px;
+}
+.card-hero {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  box-shadow: var(--shadow-soft);
 }
 
 /* donut entrance */
@@ -174,8 +297,8 @@ body {
 
 /* icon button */
 .icon-btn {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   display: grid;
   place-items: center;
@@ -302,5 +425,22 @@ body {
   .desktop .um-sheet {
     border-radius: 22px;
     max-height: 90vh;
+  }
+}
+
+/* Movimiento opcional: sin animaciones automáticas ni escalas. */
+@media (prefers-reduced-motion: reduce) {
+  .donut-in,
+  .skeleton-donut,
+  .skeleton-row {
+    animation: none;
+  }
+  .um-sheet {
+    animation: scrimIn 0.18s ease both;
+  }
+  .fab-btn:active,
+  .key-btn:active,
+  .cat-bubble:active {
+    transform: none;
   }
 }

@@ -123,7 +123,7 @@ export function RangeModal({ onClose }: { onClose: () => void }) {
 
           <button
             onClick={applyCustom}
-            style={{ padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--green)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
+            style={{ padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
           >
             Aplicar
           </button>

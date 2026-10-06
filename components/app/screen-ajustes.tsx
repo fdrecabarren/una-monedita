@@ -24,7 +24,7 @@ function NotionSection() {
       : status.via === "env"
         ? "Conectado (servidor)"
         : "No configurado";
-  const statusColor = status?.configured ? "var(--green-700)" : "var(--text-3)";
+  const statusColor = status?.configured ? "var(--accent-ink)" : "var(--text-3)";
 
   return (
     <Row label="Notion" hint="Tu base de datos personal. Duplica la plantilla y conecta tu cuenta.">
@@ -38,7 +38,7 @@ function NotionSection() {
           href={NOTION_TEMPLATE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
         >
           <Icon name="Globe" size={16} stroke={2.2} />
           Abrir plantilla de Notion
@@ -48,9 +48,9 @@ function NotionSection() {
           onClick={() => {
             window.location.href = "/setup";
           }}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1.5px solid var(--green)", background: "var(--green-soft)", color: "var(--green-700)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
         >
-          <Icon name="Plug" size={16} stroke={2.2} color="var(--green-700)" />
+          <Icon name="Plug" size={16} stroke={2.2} color="var(--accent-ink)" />
           {status?.via === "jwt" ? "Reconfigurar Notion" : "Conectar Notion"}
         </button>
       </div>
@@ -129,33 +129,33 @@ function MantenimientoSection() {
         <button
           onClick={runMigrate}
           disabled={migrateState.kind === "busy"}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, cursor: migrateState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, cursor: migrateState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
         >
           <Icon name="Database" size={16} stroke={2.2} />
           {migrateState.kind === "busy" ? "Preparando..." : "Preparar Notion"}
         </button>
         {migrateState.kind === "ok" && (
-          <div style={{ fontSize: 12, color: "var(--green-700)", fontWeight: 700 }}>{migrateState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--accent-ink)", fontWeight: 700 }}>{migrateState.message}</div>
         )}
         {migrateState.kind === "error" && (
-          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700 }}>{migrateState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--expense)", fontWeight: 700 }}>{migrateState.message}</div>
         )}
 
         <button
           onClick={runPublishGuide}
           disabled={guideState.kind === "busy"}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, cursor: guideState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, cursor: guideState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
         >
           <Icon name="BookOpen" size={16} stroke={2.2} />
           {guideState.kind === "busy" ? "Publicando..." : "Publicar guía para agentes"}
         </button>
         {guideState.kind === "ok" && (
-          <a href={guideState.message} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--green-700)", fontWeight: 700, wordBreak: "break-all" }}>
+          <a href={guideState.message} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent-ink)", fontWeight: 700, wordBreak: "break-all" }}>
             {guideState.message}
           </a>
         )}
         {guideState.kind === "error" && (
-          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700, wordBreak: "break-word", lineHeight: 1.4 }}>{guideState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--expense)", fontWeight: 700, wordBreak: "break-word", lineHeight: 1.4 }}>{guideState.message}</div>
         )}
 
         <button
@@ -205,7 +205,7 @@ function Pills<T extends string>({ value, options, onChange }: { value: T; optio
           <button
             key={o.value}
             onClick={() => onChange(o.value)}
-            style={{ padding: "9px 16px", borderRadius: 999, border: on ? "1.5px solid var(--green)" : "1.5px solid var(--line)", background: on ? "var(--green-soft)" : "var(--surface)", color: on ? "var(--green-700)" : "var(--text-2)", fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+            style={{ padding: "9px 16px", borderRadius: 999, border: on ? "1.5px solid var(--accent)" : "1.5px solid var(--line)", background: on ? "var(--accent-soft)" : "var(--surface)", color: on ? "var(--accent-ink)" : "var(--text-2)", fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
           >
             {o.label}
           </button>
@@ -260,9 +260,9 @@ export function Ajustes() {
         <button
           onClick={logout}
           disabled={loggingOut}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: "13px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--red-600)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: "13px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--expense)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
         >
-          <Icon name="LogOut" size={18} stroke={2.2} color="var(--red-600)" />
+          <Icon name="LogOut" size={18} stroke={2.2} color="var(--expense)" />
           Cerrar sesión
         </button>
       </div>
