@@ -12,7 +12,7 @@ const failures: string[] = [];
 
 function check(name: string, cond: boolean, detail = "") {
   if (cond) passed++;
-  else failures.push(`${name}${detail ? " — " + detail : ""}`);
+  else failures.push(`${name}${detail ? ": " + detail : ""}`);
 }
 
 function eq<T>(name: string, actual: T, expected: T) {

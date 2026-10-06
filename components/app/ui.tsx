@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { useStore, type Period, type TxType } from "./store";
 import { Icon } from "./Icon";
 import { RangeModal } from "./modal-range";
@@ -23,6 +23,8 @@ const PERIOD_ITEMS: { value: Period; label: string }[] = [
 // Único estilo de selección de la app: pista --bg-2, opción elegida sobre
 // --surface con borde, sin sombras ni colores de marca. El estado se comunica
 // con peso + fondo + aria-checked, no solo con color.
+// Patrón radio de ARIA: un solo tab stop (la opción elegida, o la primera si no
+// hay ninguna) y las flechas mueven la selección.
 export function SegmentedControl<T extends string>({
   label,
   options,
@@ -36,15 +38,31 @@ export function SegmentedControl<T extends string>({
   onChange: (v: T) => void;
   stretch?: boolean;
 }) {
+  const current = options.findIndex((o) => o.value === value);
+  const tabStop = current >= 0 ? current : 0;
+
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    const jump = e.key === "Home" ? 0 : e.key === "End" ? options.length - 1 : -1;
+    if (!step && jump < 0) return;
+    e.preventDefault();
+    const from = current >= 0 ? current : 0;
+    const next = jump >= 0 ? jump : (from + step + options.length) % options.length;
+    onChange(options[next].value);
+    const radios = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    radios[next]?.focus();
+  }
+
   return (
-    <div role="radiogroup" aria-label={label} style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999, width: stretch ? "100%" : undefined }}>
-      {options.map((o) => {
+    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown} style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999, width: stretch ? "100%" : undefined }}>
+      {options.map((o, i) => {
         const on = o.value === value;
         return (
           <button
             key={o.value}
             role="radio"
             aria-checked={on}
+            tabIndex={i === tabStop ? 0 : -1}
             onClick={() => onChange(o.value)}
             style={{
               flex: stretch ? 1 : undefined,
@@ -134,7 +152,7 @@ export function MonthNav({ center = true }: { center?: boolean }) {
   );
 }
 
-// Cabecera de navegación del Resumen: ‹ [etiqueta del rango ⌄] › — funciona para
+// Cabecera de navegación del Resumen: ‹ [etiqueta del rango ⌄] ›. Funciona para
 // los períodos fijos y el rango personalizado; tocar la etiqueta abre el selector
 // de rango.
 export function RangeNav({ center = true }: { center?: boolean }) {
@@ -164,7 +182,7 @@ export function RangeNav({ center = true }: { center?: boolean }) {
 }
 
 // Centro del donut: lo que suma el anillo (gastos o ingresos del foco), sin
-// repetir el saldo — el Disponible vive en un solo lugar (Monedero / BalanceCard).
+// repetir el saldo: el Disponible vive en un solo lugar (Monedero / BalanceCard).
 export function CenterBalance({ scale = 1 }: { scale?: number }) {
   const { totals, currency, focus, rangeLabel } = useStore();
   const isExpense = focus === "expense";

@@ -92,11 +92,21 @@ export function Sheet({
     };
   }, []);
 
-  // Después de cada render: si el foco quedó afuera (el elemento enfocado se
-  // desmontó), vuelve al diálogo de arriba de la pila.
+  // Después de cada render: si apareció un [data-autofocus] nuevo (p. ej. el
+  // "Cancelar" de una confirmación) recibe el foco; si el foco quedó afuera (el
+  // elemento enfocado se desmontó), vuelve al diálogo de arriba de la pila.
+  const lastAuto = useRef<HTMLElement | null>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el || !isTop(el)) return;
+    const marked = el.querySelectorAll<HTMLElement>("[data-autofocus]");
+    const auto = marked[marked.length - 1] ?? null;
+    if (auto && auto !== lastAuto.current) {
+      lastAuto.current = auto;
+      auto.focus({ preventScroll: true });
+      return;
+    }
+    lastAuto.current = auto;
     const active = document.activeElement;
     if (!active || active === document.body || !el.contains(active)) focusInside(el);
   });

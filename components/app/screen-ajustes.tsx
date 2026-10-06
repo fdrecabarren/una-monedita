@@ -205,7 +205,7 @@ function Pills<T extends string>({ label, value, options, onChange }: { label: s
 
 // Saldo: interruptor del acumulado + saldo inicial (Notion · Accounts.InitialBalance).
 function SaldoSection() {
-  const { carryOver, setCarryOver, initialBalance, setInitialBalance, balanceBefore, currency } = useStore();
+  const { carryOver, setCarryOver, initialBalance, initialBalanceError, retryHistory, setInitialBalance, balanceBefore, currency } = useStore();
   const [draft, setDraft] = useState<string | null>(null);
   const [calcOpen, setCalcOpen] = useState(false);
   const [todayAmount, setTodayAmount] = useState("");
@@ -237,7 +237,7 @@ function SaldoSection() {
     }
   }
 
-  function useToday() {
+  function applyToday() {
     const hoy = parseAmount(todayAmount);
     if (hoy === null || closingToday === null || initialBalance === null) {
       setMsg({ ok: false, text: "Ingresá cuánta plata tenés hoy." });
@@ -277,7 +277,7 @@ function SaldoSection() {
                 setDraft(e.target.value);
                 setMsg(null);
               }}
-              placeholder={initialBalance === null ? "Cargando…" : "Ej: 150000"}
+              placeholder={initialBalance === null ? (initialBalanceError ? "No disponible" : "Cargando…") : "Ej: 150000"}
               style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
             />
             <button
@@ -291,6 +291,17 @@ function SaldoSection() {
           {msg && (
             <div role={msg.ok ? "status" : "alert"} style={{ fontSize: 13, fontWeight: 700, color: msg.ok ? "var(--income)" : "var(--expense)", lineHeight: 1.4 }}>
               {msg.text}
+            </div>
+          )}
+          {initialBalanceError && (
+            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "var(--expense)", lineHeight: 1.4 }}>
+              No se pudo leer el saldo inicial de Notion.
+              <button
+                onClick={retryHistory}
+                style={{ minHeight: 44, padding: "0 6px", border: "none", background: "transparent", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Reintentar
+              </button>
             </div>
           )}
         </div>
@@ -320,7 +331,7 @@ function SaldoSection() {
                 style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
               />
               <button
-                onClick={useToday}
+                onClick={applyToday}
                 style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
               >
                 Calcular

@@ -33,8 +33,9 @@ export function TrendBars({
   const maxAbs = Math.max(...data.map((d) => Math.abs(d.value)), 1);
   const dense = data.length > 20;
   const showLabelEvery = data.length > 12 ? Math.ceil(data.length / 8) : 1;
-  // zona de barras: con negativos se parte en dos mitades alrededor de la base
-  const half = hasNeg ? (height - 6) / 2 : height - 6;
+  // zona de barras: con negativos se parte en dos mitades alrededor de la base.
+  // Columna = mitad + base (1) + mitad + etiqueta (14) + 3 gaps de 4 = height + 18.
+  const half = hasNeg ? (height - 9) / 2 : height - 6;
 
   const peak = data.reduce((a, b) => (Math.abs(b.value) > Math.abs(a.value) ? b : a), data[0]);
   const label = ariaLabel ?? `Tendencia. Valor más alto: ${peak.label}, ${Math.round(peak.value)}`;
