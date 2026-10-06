@@ -69,7 +69,8 @@ export function useBalanceView(): BalanceView {
   };
 }
 
-function signedColor(n: number): string {
+// Color de un monto con signo: ingreso neto verde, gasto neto rojo, cero neutro.
+export function signedColor(n: number): string {
   return n < 0 ? "var(--expense)" : n > 0 ? "var(--income)" : "var(--text-2)";
 }
 

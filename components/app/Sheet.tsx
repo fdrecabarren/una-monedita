@@ -6,10 +6,27 @@ import { Icon } from "./Icon";
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
+// Pila de sheets abiertos: solo el de arriba responde al teclado y recupera el
+// foco (un editor de categoría con la tienda de íconos encima son dos sheets).
+const openSheets: HTMLElement[] = [];
+const isTop = (el: HTMLElement) => openSheets[openSheets.length - 1] === el;
+
+// El último [data-autofocus] gana: una confirmación (ConfirmRow) se renderiza
+// después de los campos del formulario y tiene prioridad sobre ellos.
+function focusInside(el: HTMLElement) {
+  const marked = el.querySelectorAll<HTMLElement>("[data-autofocus]");
+  (marked[marked.length - 1] ?? el).focus({ preventScroll: true });
+}
+
 // Contenedor único de los modales de la app: scrim + hoja, con semántica de
 // diálogo (role, aria-modal, nombre accesible), foco que entra y vuelve, trap de
 // Tab y Escape para cerrar. `onClose` se llama con Escape y al tocar el scrim;
 // cada modal decide qué hace (p. ej. pedir confirmación si hay datos sin guardar).
+//
+// El teclado se escucha en document (no en el diálogo): si el contenido cambia
+// adentro (panel de categorías, confirmación de borrado) el elemento con foco se
+// desmonta y el foco cae a <body>; así Escape sigue funcionando y, después de
+// cada render, el foco perdido vuelve al diálogo (o a su [data-autofocus]).
 export function Sheet({
   label,
   onClose,
@@ -30,44 +47,59 @@ export function Sheet({
   });
 
   useEffect(() => {
-    const prev = document.activeElement as HTMLElement | null;
     const el = ref.current;
-    if (el) {
-      // el foco entra al diálogo; solo salta a un campo si lo pide (data-autofocus),
-      // para no robarle las teclas a modales con teclado propio (calculadora).
-      (el.querySelector<HTMLElement>("[data-autofocus]") ?? el).focus({ preventScroll: true });
+    if (!el) return;
+    const prev = document.activeElement as HTMLElement | null;
+    openSheets.push(el);
+    // el foco entra al diálogo; solo salta a un campo si lo pide (data-autofocus),
+    // para no robarle las teclas a modales con teclado propio (calculadora).
+    focusInside(el);
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (!el || !isTop(el)) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (n) => n.offsetParent !== null || n === document.activeElement
+      );
+      if (items.length === 0) {
+        e.preventDefault();
+        el.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      const inside = active instanceof Node && el.contains(active);
+      if (e.shiftKey && (!inside || active === first || active === el)) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (!inside || active === last)) {
+        e.preventDefault();
+        first.focus();
+      }
     }
+    document.addEventListener("keydown", onKeyDown);
     return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      const i = openSheets.lastIndexOf(el);
+      if (i >= 0) openSheets.splice(i, 1);
       if (prev && document.contains(prev)) prev.focus({ preventScroll: true });
     };
   }, []);
 
-  function onKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      closeRef.current();
-      return;
-    }
-    if (e.key !== "Tab" || !ref.current) return;
-    const items = Array.from(ref.current.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-      (n) => n.offsetParent !== null || n === document.activeElement
-    );
-    if (items.length === 0) {
-      e.preventDefault();
-      ref.current.focus();
-      return;
-    }
-    const first = items[0];
-    const last = items[items.length - 1];
+  // Después de cada render: si el foco quedó afuera (el elemento enfocado se
+  // desmontó), vuelve al diálogo de arriba de la pila.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || !isTop(el)) return;
     const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === ref.current)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
+    if (!active || active === document.body || !el.contains(active)) focusInside(el);
+  });
 
   return (
     <div className="um-modal-scrim" onClick={() => closeRef.current()}>
@@ -79,7 +111,6 @@ export function Sheet({
         tabIndex={-1}
         className="um-sheet"
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={onKeyDown}
         style={{ maxWidth, outline: "none", ...style }}
       >
         {children}
@@ -121,6 +152,7 @@ export function SheetHeader({
 
 // Confirmación destructiva dentro del propio sheet (sin diálogos del navegador):
 // pregunta, aclara y ofrece [Cancelar] / [acción] con la acción en rojo.
+// "Cancelar" lleva data-autofocus: el Sheet le pasa el foco al aparecer.
 export function ConfirmRow({
   question,
   detail = "No se puede deshacer.",

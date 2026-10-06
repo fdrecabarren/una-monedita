@@ -143,6 +143,9 @@ function EntryForm({
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || panel !== "pad" || confirmKind) return;
+      // Enter sobre un botón enfocado (Cerrar, Eliminar, tipo…) activa ESE botón:
+      // no tiene que guardar el movimiento de paso.
+      if (e.key === "Enter" && e.target instanceof Element && e.target.closest("button, a, select")) return;
       if (/^[0-9]$/.test(e.key)) push(e.key);
       else if (e.key === "." || e.key === ",") push(".");
       else if (e.key === "+") push("+");
@@ -192,7 +195,7 @@ function EntryForm({
           </div>
         </div>
       ) : panel === "cats" ? (
-        <SheetHeader title="Elegí categoría" onClose={closeEntry} onBack={() => setPanel("pad")} backLabel="Volver al monto" />
+        <SheetHeader title="Elegí categoría" onClose={() => (dirty ? setConfirmKind("discard") : closeEntry())} onBack={() => setPanel("pad")} backLabel="Volver al monto" />
       ) : (
         <div style={{ padding: "14px 12px 10px 18px", display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
           {fromSub ? (

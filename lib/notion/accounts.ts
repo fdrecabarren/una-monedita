@@ -92,10 +92,19 @@ export async function updateAccount(
   return pageToAccount(page as PageObjectResponse);
 }
 
-// Cuenta que guarda el saldo inicial de la app: la llamada "Principal" o, si no
-// existe, la primera no archivada. La app no maneja cuentas todavía: el saldo
-// inicial es lo que Franco tenía antes de registrar su primer movimiento.
-export async function getMainAccount(creds?: NotionCreds): Promise<Account | null> {
+// Saldo inicial de la app = suma de InitialBalance de todas las cuentas no
+// archivadas (lo que había antes del primer movimiento, en cualquier cuenta).
+// Es estable aunque se agreguen cuentas: una cuenta nueva suma su propio saldo.
+// `target` = la cuenta que se ajusta al editarlo desde la app: "Principal" o, si
+// hay una sola cuenta, esa; con varias y sin "Principal", no hay target (el PUT
+// crea "Principal" con la diferencia).
+export async function getOpeningInfo(
+  creds?: NotionCreds
+): Promise<{ total: number; target: Account | null; others: number }> {
   const accounts = await getAccounts(creds);
-  return accounts.find((a) => a.name.trim().toLowerCase() === "principal") ?? accounts[0] ?? null;
+  const total = accounts.reduce((s, a) => s + (a.initialBalance ?? 0), 0);
+  const target =
+    accounts.find((a) => a.name.trim().toLowerCase() === "principal") ?? (accounts.length === 1 ? accounts[0] : null);
+  const others = total - (target?.initialBalance ?? 0);
+  return { total, target, others };
 }

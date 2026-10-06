@@ -202,6 +202,8 @@ interface StoreValue {
   retryHistory: () => void;
   // saldo inicial (Notion · Accounts.InitialBalance); null mientras carga
   initialBalance: number | null;
+  // no se pudo leer el saldo inicial de Notion (retryHistory reintenta)
+  initialBalanceError: boolean;
   setInitialBalance: (n: number) => Promise<void>;
   // todos los movimientos cargados (años en caché + historial), con optimistas
   allTx: UITx[];
@@ -293,6 +295,33 @@ function budgetToUI(b: Budget): UIBudget {
     alertAt80: b.alertAt80,
     categoryId: b.categoryId,
   };
+}
+
+// Cambios locales (crear/editar/borrar) numerados en secuencia. Al llegar la
+// foto de un año del servidor (que puede ser anterior a esos cambios), lo que se
+// tocó DESPUÉS de lanzar el pedido gana: no se pierde un alta recién confirmada
+// ni se resucita algo borrado o movido de año. `year` = año donde vive ahora
+// (null = borrado).
+interface Touch {
+  seq: number;
+  year: number | null;
+}
+
+function mergeYear(y: number, local: UITx[], fresh: UITx[], touches: Map<string, Touch>, since: number): UITx[] {
+  const recent = (id: string) => {
+    const t = touches.get(id);
+    return t && t.seq > since ? t : undefined;
+  };
+  const freshIds = new Set(fresh.map((t) => t.id));
+  const merged: UITx[] = [];
+  for (const t of fresh) {
+    const r = recent(t.id);
+    if (!r) merged.push(t);
+    else if (r.year === y) merged.push(local.find((l) => l.id === t.id) ?? t);
+    // si no: se borró o se movió de año después del pedido → no se resucita
+  }
+  const extras = local.filter((l) => !freshIds.has(l.id) && (l.id.startsWith("tmp-") || recent(l.id)?.year === y));
+  return [...extras, ...merged];
 }
 
 function persist(key: string, value: string) {
@@ -578,9 +607,14 @@ export function StoreProvider({
   const [notice, setNotice] = useState<Notice | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const showNotice = useCallback((text: string, kind: Notice["kind"] = "error") => {
-    setNotice({ kind, text });
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    if (kind === "success") noticeTimer.current = setTimeout(() => setNotice(null), 2500);
+    if (kind === "error") {
+      setNotice({ kind, text });
+      return;
+    }
+    // un éxito no tapa un error que todavía no se leyó; el timer solo limpia éxitos
+    setNotice((cur) => (cur && cur.kind === "error" ? cur : { kind, text }));
+    noticeTimer.current = setTimeout(() => setNotice((cur) => (cur && cur.kind === "success" ? null : cur)), 2500);
   }, []);
   const dismissNotice = useCallback(() => {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
@@ -601,22 +635,23 @@ export function StoreProvider({
 
   // fetch a year if not cached (dedup de requests en vuelo)
   const inFlightYears = useRef<Set<number>>(new Set());
+  const touches = useRef(new Map<string, Touch>());
+  const touchSeq = useRef(0);
   const ensureYear = useCallback(
     async (y: number) => {
       if (isLoaded(y) || inFlightYears.current.has(y)) return;
       inFlightYears.current.add(y);
       setLoading(true);
+      const since = touchSeq.current;
       try {
         const res = await fetch(`/api/transactions?year=${y}`);
         if (!res.ok) throw new Error(`GET /api/transactions?year=${y} → ${res.status}`);
         const data = await res.json();
         const list: Transaction[] = data.transactions || [];
-        // los optimistas (tmp-) que se agregaron mientras el pedido estaba en
-        // vuelo se conservan: si no, el fetch los pisa y el saldo da un salto
-        setTxByYear((prev) => ({
-          ...prev,
-          [y]: [...(prev[y] ?? []).filter((t) => t.id.startsWith("tmp-")), ...list.map((t) => txToUI(t, byId))],
-        }));
+        // lo que se creó/editó/borró mientras el pedido estaba en vuelo gana
+        // sobre la foto del servidor (si no, el fetch lo pisa y el saldo salta)
+        const fresh = list.map((t) => txToUI(t, byId));
+        setTxByYear((prev) => ({ ...prev, [y]: mergeYear(y, prev[y] ?? [], fresh, touches.current, since) }));
         setLoadedYears((prev) => new Set(prev).add(y));
       } catch (err) {
         console.error(err);
@@ -764,6 +799,7 @@ export function StoreProvider({
 
   const loadHistory = useCallback(async () => {
     setHistory("loading");
+    const since = touchSeq.current;
     try {
       const res = await fetch(`/api/transactions/history?before=${initialYear}-01-01`);
       if (!res.ok) throw await httpError(res);
@@ -777,7 +813,9 @@ export function StoreProvider({
       setTxByYear((prev) => {
         const next = { ...prev };
         for (const [y, items] of Object.entries(byYear)) {
-          next[Number(y)] = [...(prev[Number(y)] ?? []).filter((t) => t.id.startsWith("tmp-")), ...items];
+          // la respuesta puede tardar: lo editado mientras tanto (incluso en un
+          // año que ensureYear ya trajo) no se pisa con la foto vieja
+          next[Number(y)] = mergeYear(Number(y), prev[Number(y)] ?? [], items, touches.current, since);
         }
         return next;
       });
@@ -799,25 +837,41 @@ export function StoreProvider({
     if (prefsReady && carryOver && !initialLoadError && history === "idle") void loadHistory();
   }, [prefsReady, carryOver, initialLoadError, history, loadHistory]);
 
-  const retryHistory = useCallback(() => setHistory("idle"), []);
-
-  // saldo inicial: una vez al montar. Si Notion no tiene Accounts, queda en 0.
+  // saldo inicial: una vez al montar. Si el workspace no tiene base Accounts (400)
+  // no hay nada que leer y vale 0; cualquier otro fallo es un error visible (no un
+  // 0 silencioso que mostraría un Disponible equivocado como si fuera real).
+  const [initialBalanceError, setInitialBalanceError] = useState(false);
+  const [openingAttempt, setOpeningAttempt] = useState(0);
   useEffect(() => {
     if (!prefsReady || initialLoadError) return;
     let cancelled = false;
     fetch("/api/accounts/opening")
-      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`GET /api/accounts/opening → ${res.status}`))))
-      .then((d: { initialBalance?: number }) => {
-        if (!cancelled) setInitialBalanceRaw(typeof d.initialBalance === "number" ? d.initialBalance : 0);
+      .then(async (res) => {
+        if (res.status === 400) return { initialBalance: 0 };
+        if (!res.ok) throw await httpError(res);
+        return res.json() as Promise<{ initialBalance?: number }>;
+      })
+      .then((d) => {
+        if (cancelled) return;
+        setInitialBalanceRaw(typeof d.initialBalance === "number" ? d.initialBalance : 0);
+        setInitialBalanceError(false);
       })
       .catch((err) => {
         console.error(err);
-        if (!cancelled) setInitialBalanceRaw(0);
+        if (!cancelled) setInitialBalanceError(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [prefsReady, initialLoadError]);
+  }, [prefsReady, initialLoadError, openingAttempt]);
+
+  const retryHistory = useCallback(() => {
+    setHistory((h) => (h === "error" ? "idle" : h));
+    if (initialBalanceError) {
+      setInitialBalanceError(false);
+      setOpeningAttempt((n) => n + 1);
+    }
+  }, [initialBalanceError]);
 
   const setInitialBalance = useCallback<StoreValue["setInitialBalance"]>(async (n) => {
     const res = await fetch("/api/accounts/opening", {
@@ -841,13 +895,13 @@ export function StoreProvider({
 
   const carry = useMemo<CarryState>(() => {
     if (!carryOver || sim !== "normal") return { status: "off" };
-    if (initialLoadError || history === "error") return { status: "error" };
+    if (initialLoadError || history === "error" || initialBalanceError) return { status: "error" };
     const now = new Date();
     const last = closingCutoff(range, now).until.getFullYear();
     if (!ledgerReady(last)) return { status: "loading" };
     if (yearsIn(range).some((y) => !isLoaded(y))) return { status: "loading" };
     return { status: "ready", ...carryFor(allTx, range, now, initialBalance ?? 0) };
-  }, [carryOver, sim, initialLoadError, history, range, ledgerReady, isLoaded, allTx, initialBalance]);
+  }, [carryOver, sim, initialLoadError, history, initialBalanceError, range, ledgerReady, isLoaded, allTx, initialBalance]);
 
   const balanceBefore = useCallback(
     (date: Date): number | null => {
@@ -859,6 +913,7 @@ export function StoreProvider({
 
   // ---- mutations ----
   const upsertTx = useCallback((y: number, tx: UITx) => {
+    touches.current.set(tx.id, { seq: ++touchSeq.current, year: y });
     setTxByYear((prev) => {
       const list = prev[y] ? [...prev[y]] : [];
       const i = list.findIndex((t) => t.id === tx.id);
@@ -869,6 +924,7 @@ export function StoreProvider({
   }, []);
 
   const removeTx = useCallback((id: string) => {
+    touches.current.set(id, { seq: ++touchSeq.current, year: null });
     setTxByYear((prev) => {
       const out: Record<number, UITx[]> = {};
       for (const [k, list] of Object.entries(prev)) {
@@ -1247,6 +1303,7 @@ export function StoreProvider({
     carry,
     retryHistory,
     initialBalance,
+    initialBalanceError,
     setInitialBalance,
     allTx,
     balanceBefore,

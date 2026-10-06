@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useStore, type UICategory, type UITx } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { StateView, MonthNav, MONTHS_FULL } from "./ui";
+import { signedColor } from "./balance";
+import { useElementSize } from "./useElementSize";
 import { fmt, fmtShort } from "@/lib/format";
+import { addDays, startOfDay } from "@/lib/date-range";
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const WEEKDAYS_FULL = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -63,17 +66,9 @@ export function Calendario() {
   // Tamaño de celda para que la grilla completa entre sin scroll: se mide el alto
   // real del contenedor (ya sin cabecera ni nav) y se le resta lo que ocupan
   // MonthNav, el resumen del mes, la fila de días y un mínimo para el detalle.
-  const boxRef = useRef<HTMLDivElement>(null);
-  const [boxH, setBoxH] = useState(0);
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const measure = () => setBoxH(el.clientHeight);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [wide]);
+  // (callback ref: se engancha aunque el primer render haya sido un estado de carga)
+  const [boxRef, box] = useElementSize();
+  const boxH = box.height;
   const gap = 6;
   const reserved = wide ? 190 : 300;
   const cellMax = wide ? 96 : 40;
@@ -108,11 +103,16 @@ export function Calendario() {
     else mExp += t.amount;
   });
   const monthNet = mInc - mExp;
-  const signedColor = (n: number) => (n < 0 ? "var(--expense)" : n > 0 ? "var(--income)" : "var(--text-2)");
-  // saldo al cierre del mes / del día (null mientras el historial no esté listo o con el acumulado apagado)
-  const monthClosing = carryOver ? balanceBefore(new Date(year, month + 1, 1)) : null;
+  // Saldo del mes y del día (null mientras el historial no esté listo o con el
+  // acumulado apagado). El mes en curso se cuenta hasta hoy, igual que el
+  // "Disponible hoy" del Resumen; un mes pasado, al cierre; uno futuro, previsto.
+  const tomorrow = addDays(startOfDay(today), 1);
+  const monthIsFuture = new Date(year, month, 1).getTime() > today.getTime();
+  const monthClosing = carryOver ? balanceBefore(isThisMonth ? tomorrow : new Date(year, month + 1, 1)) : null;
+  const monthClosingLabel = isThisMonth ? "Disponible hoy" : monthIsFuture ? "Saldo previsto" : "Saldo al cierre";
   const dayNet = dInc - dExp;
   const dayClosing = carryOver ? balanceBefore(new Date(year, month, selDay + 1)) : null;
+  const dayClosingLabel = new Date(year, month, selDay).getTime() > today.getTime() ? "Saldo previsto" : "Saldo al cierre";
 
   if (sim === "loading") return <StateView kind="loading" />;
   if (sim === "error") return <StateView kind="error" onRetry={() => setSim("normal")} />;
@@ -189,7 +189,7 @@ export function Calendario() {
       </div>
       {monthClosing !== null && (
         <div style={{ textAlign: "right" }}>
-          <div className="eyebrow">Saldo al cierre</div>
+          <div className="eyebrow">{monthClosingLabel}</div>
           <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: monthClosing < 0 ? "var(--expense)" : "var(--text)" }}>{fmt(monthClosing, currency)}</div>
         </div>
       )}
@@ -225,7 +225,7 @@ export function Calendario() {
           )}
           {dayClosing !== null && (
             <span>
-              Saldo al cierre <strong style={{ color: dayClosing < 0 ? "var(--expense)" : "var(--text)" }}>{fmt(dayClosing, currency)}</strong>
+              {dayClosingLabel} <strong style={{ color: dayClosing < 0 ? "var(--expense)" : "var(--text)" }}>{fmt(dayClosing, currency)}</strong>
             </span>
           )}
         </div>

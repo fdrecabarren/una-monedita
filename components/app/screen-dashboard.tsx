@@ -1,33 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo } from "react";
 import { useStore, type TxType } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Donut } from "./Donut";
 import { TrendBars } from "./TrendBars";
 import { PeriodPills, RangeNav, CenterBalance, StateView, FocusToggle } from "./ui";
 import { Monedero, BalanceCard } from "./balance";
+import { useElementSize } from "./useElementSize";
 import { fmt, fmtShort } from "@/lib/format";
 import { bucketsFor, daysBetween, endOfMonth, rangeLabel as formatRangeLabel } from "@/lib/date-range";
 
-// Mide el contenedor y devuelve un tamaño entre min y max que entre en él: el
-// anillo de 332px fijo no entraba en un iPhone chico (375×667).
+// Tamaño del anillo entre min y max que entre en el contenedor: el anillo de
+// 332px fijo no entraba en un iPhone chico (375×667).
 function useFit(min: number, max: number) {
-  const ref = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState(max);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => {
-      const w = el.clientWidth - 24;
-      const h = el.clientHeight - 8;
-      setSize(Math.round(Math.max(min, Math.min(max, w, h))));
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [min, max]);
+  const [ref, box] = useElementSize();
+  const size = box.width ? Math.round(Math.max(min, Math.min(max, box.width - 24, box.height - 8))) : max;
   return [ref, size] as const;
 }
 
