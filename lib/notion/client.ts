@@ -47,15 +47,23 @@ export async function queryDatabase(
   if (options.page_size !== undefined) body.page_size = options.page_size;
   if (options.start_cursor !== undefined) body.start_cursor = options.start_cursor;
 
-  const res = await fetch(`https://api.notion.com/v1/databases/${database_id}/query`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${authToken}`,
-      "Notion-Version": "2022-06-28",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  // Notion limita a ~3 pedidos/s: ante un 429 espera `Retry-After` (1 s por
+  // defecto, tope 10 s) y reintenta hasta 3 veces antes de fallar.
+  let res: Response;
+  for (let attempt = 0; ; attempt++) {
+    res = await fetch(`https://api.notion.com/v1/databases/${database_id}/query`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${authToken}`,
+        "Notion-Version": "2022-06-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.status !== 429 || attempt >= 3) break;
+    const wait = Math.min(10, Math.max(0, Number(res.headers.get("retry-after")) || 1));
+    await new Promise((r) => setTimeout(r, wait * 1000));
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(`Notion query error ${res.status}: ${JSON.stringify(err)}`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type KeyboardEvent, type ReactNode } from "react";
 import { useStore, type Period, type TxType } from "./store";
 import { Icon } from "./Icon";
 import { RangeModal } from "./modal-range";
@@ -11,49 +11,127 @@ export const MONTHS_FULL = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
+// "Personalizado" no es una opción del selector: se abre desde la etiqueta de
+// RangeNav (un segmento que abre un modal rompería la semántica de selección).
 const PERIOD_ITEMS: { value: Period; label: string }[] = [
   { value: "Día", label: "Día" },
   { value: "Semana", label: "Semana" },
   { value: "Mes", label: "Mes" },
   { value: "Año", label: "Año" },
-  { value: "Personalizado", label: "Rango" },
 ];
 
-export function PeriodPills({ size = "md" }: { size?: "sm" | "md" }) {
-  const { period, setPeriod } = useStore();
-  const [rangeOpen, setRangeOpen] = useState(false);
-  const pad = size === "sm" ? "5px 11px" : "7px 15px";
-  const fs = size === "sm" ? 12.5 : 13.5;
+// Único estilo de selección de la app: pista --bg-2, opción elegida sobre
+// --surface con borde, sin sombras ni colores de marca. El estado se comunica
+// con peso + fondo + aria-checked, no solo con color.
+// Patrón radio de ARIA: un solo tab stop (la opción elegida, o la primera si no
+// hay ninguna) y las flechas mueven la selección.
+export function SegmentedControl<T extends string>({
+  label,
+  options,
+  value,
+  onChange,
+  stretch = false,
+}: {
+  label: string;
+  options: { value: T; label: string; dot?: string }[];
+  value: T | null;
+  onChange: (v: T) => void;
+  stretch?: boolean;
+}) {
+  const current = options.findIndex((o) => o.value === value);
+  const tabStop = current >= 0 ? current : 0;
+
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    const jump = e.key === "Home" ? 0 : e.key === "End" ? options.length - 1 : -1;
+    if (!step && jump < 0) return;
+    e.preventDefault();
+    const from = current >= 0 ? current : 0;
+    const next = jump >= 0 ? jump : (from + step + options.length) % options.length;
+    onChange(options[next].value);
+    const radios = e.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+    radios[next]?.focus();
+  }
+
   return (
-    <>
-      <div style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999 }}>
-        {PERIOD_ITEMS.map((p) => {
-          const on = p.value === period;
-          return (
-            <button
-              key={p.value}
-              onClick={() => (p.value === "Personalizado" ? setRangeOpen(true) : setPeriod(p.value))}
-              style={{
-                padding: pad,
-                borderRadius: 999,
-                fontSize: fs,
-                fontWeight: 700,
-                border: "none",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                color: on ? "var(--on-accent)" : "var(--text-2)",
-                background: on ? "var(--green)" : "transparent",
-                boxShadow: on ? "var(--shadow-fab)" : "none",
-                transition: "background .15s, color .15s",
-              }}
-            >
-              {p.label}
-            </button>
-          );
-        })}
-      </div>
-      {rangeOpen && <RangeModal onClose={() => setRangeOpen(false)} />}
-    </>
+    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown} style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999, width: stretch ? "100%" : undefined }}>
+      {options.map((o, i) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            role="radio"
+            aria-checked={on}
+            tabIndex={i === tabStop ? 0 : -1}
+            onClick={() => onChange(o.value)}
+            style={{
+              flex: stretch ? 1 : undefined,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 7,
+              padding: "8px 14px",
+              minHeight: 36,
+              borderRadius: 999,
+              fontSize: 13.5,
+              fontWeight: on ? 800 : 700,
+              border: on ? "1px solid var(--line)" : "1px solid transparent",
+              cursor: "pointer",
+              fontFamily: "inherit",
+              color: on ? "var(--text)" : "var(--text-2)",
+              background: on ? "var(--surface)" : "transparent",
+              transition: "background .15s, color .15s",
+            }}
+          >
+            {o.dot && <span aria-hidden="true" style={{ width: 8, height: 8, borderRadius: 999, background: o.dot, flex: "0 0 auto" }} />}
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function PeriodPills() {
+  const { period, setPeriod } = useStore();
+  return (
+    <SegmentedControl<Period>
+      label="Período"
+      options={PERIOD_ITEMS}
+      value={period === "Personalizado" ? null : period}
+      onChange={setPeriod}
+    />
+  );
+}
+
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  label = "Opciones",
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  label?: string;
+}) {
+  return <SegmentedControl<T> label={label} options={options} value={value} onChange={onChange} stretch />;
+}
+
+// FocusToggle: alterna el foco del Resumen entre Gastos e Ingresos. Misma
+// pastilla neutra que el resto; un punto de color indica el tipo.
+export function FocusToggle() {
+  const { focus, setFocus } = useStore();
+  return (
+    <SegmentedControl<TxType>
+      label="Mostrar"
+      options={[
+        { value: "expense", label: "Gastos", dot: "var(--expense-fill)" },
+        { value: "income", label: "Ingresos", dot: "var(--income-fill)" },
+      ]}
+      value={focus}
+      onChange={setFocus}
+    />
   );
 }
 
@@ -74,9 +152,9 @@ export function MonthNav({ center = true }: { center?: boolean }) {
   );
 }
 
-// Cabecera de navegación del Resumen: ‹ [etiqueta del rango] › — funciona para
-// los cinco períodos (Día/Semana/Mes/Año/Rango); tocar la etiqueta abre el
-// selector de rango, igual que la pastilla "Rango" de PeriodPills.
+// Cabecera de navegación del Resumen: ‹ [etiqueta del rango ⌄] ›. Funciona para
+// los períodos fijos y el rango personalizado; tocar la etiqueta abre el selector
+// de rango.
 export function RangeNav({ center = true }: { center?: boolean }) {
   const { rangeLabel, navRange } = useStore();
   const [open, setOpen] = useState(false);
@@ -87,10 +165,13 @@ export function RangeNav({ center = true }: { center?: boolean }) {
       </button>
       <button
         onClick={() => setOpen(true)}
+        aria-haspopup="dialog"
+        aria-label={`Elegir período, ${rangeLabel}`}
         className="num"
-        style={{ minWidth: 132, textAlign: "center", fontWeight: 600, fontSize: 16, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--text)", padding: "4px 6px" }}
+        style={{ minWidth: 132, minHeight: 44, display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontWeight: 600, fontSize: 16, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--text)", padding: "4px 6px" }}
       >
         {rangeLabel}
+        <Icon name="ChevronDown" size={14} stroke={2.4} color="var(--text-3)" />
       </button>
       <button className="icon-btn" onClick={() => navRange(1)} aria-label="Período siguiente">
         <Icon name="ChevronRight" size={20} stroke={2.4} color="var(--text-2)" />
@@ -100,20 +181,18 @@ export function RangeNav({ center = true }: { center?: boolean }) {
   );
 }
 
+// Centro del donut: lo que suma el anillo (gastos o ingresos del foco), sin
+// repetir el saldo: el Disponible vive en un solo lugar (Monedero / BalanceCard).
 export function CenterBalance({ scale = 1 }: { scale?: number }) {
-  const { totals, currency, focus } = useStore();
+  const { totals, currency, focus, rangeLabel } = useStore();
   const isExpense = focus === "expense";
   return (
     <div>
-      <div style={{ fontSize: 10.5 * Math.max(scale, 0.9), fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--text-3)" }}>
-        Balance
-      </div>
+      <div className="eyebrow" style={{ color: "var(--text-2)" }}>{isExpense ? "Gastos" : "Ingresos"}</div>
       <div className="num" style={{ fontSize: 34 * scale, fontWeight: 600, lineHeight: 1.04, color: "var(--text)", marginTop: 2 }}>
-        {fmt(totals.balance, currency)}
+        {fmt(isExpense ? totals.expense : totals.income, currency)}
       </div>
-      <div className="num tnum" style={{ fontSize: 14.5 * scale, fontWeight: 600, color: isExpense ? "var(--red)" : "var(--green)", marginTop: 4 }}>
-        {isExpense ? "− " : "+ "}{fmt(isExpense ? totals.expense : totals.income, currency)}
-      </div>
+      <div className="caption" style={{ marginTop: 4 }}>{rangeLabel.toLowerCase()}</div>
     </div>
   );
 }
@@ -123,7 +202,7 @@ export function ActionButton({ kind, onClick, size = 60 }: { kind: "expense" | "
   return (
     <button
       onClick={onClick}
-      aria-label={expense ? "Registrar gasto" : "Registrar ingreso"}
+      aria-label={expense ? "Agregar gasto" : "Agregar ingreso"}
       className="fab-btn"
       style={{
         width: size,
@@ -133,94 +212,54 @@ export function ActionButton({ kind, onClick, size = 60 }: { kind: "expense" | "
         placeItems: "center",
         border: "none",
         cursor: "pointer",
-        background: expense ? "var(--red)" : "var(--green)",
-        color: "#fff",
-        boxShadow: expense ? "0 6px 16px rgba(224,88,74,.32)" : "var(--shadow-fab)",
+        background: expense ? "var(--expense-fill)" : "var(--income-fill)",
+        color: expense ? "var(--on-expense)" : "var(--on-income)",
+        boxShadow: "var(--shadow-soft)",
         transition: "filter .15s, transform .1s",
       }}
     >
-      <Icon name={expense ? "Minus" : "Plus"} size={Math.round(size * 0.46)} stroke={3} color="#fff" />
+      <Icon name={expense ? "Minus" : "Plus"} size={Math.round(size * 0.46)} stroke={3} color={expense ? "var(--on-expense)" : "var(--on-income)"} />
     </button>
   );
 }
 
-export function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-}) {
+// Aviso flotante. Los errores no se cierran solos y llevan botón de cierre; los
+// éxitos desaparecen a los pocos segundos (el store los limpia).
+export function Toast({ desktop }: { desktop: boolean }) {
+  const { notice, dismissNotice } = useStore();
+  if (!notice) return null;
+  const error = notice.kind === "error";
   return (
-    <div style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 10 }}>
-      {options.map((o) => {
-        const on = o.value === value;
-        return (
-          <button
-            key={o.value}
-            onClick={() => onChange(o.value)}
-            style={{
-              flex: 1,
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontWeight: 700,
-              fontSize: 13,
-              color: on ? "var(--text)" : "var(--text-3)",
-              background: on ? "var(--surface)" : "transparent",
-              boxShadow: on ? "var(--shadow-card)" : "none",
-              transition: "background .15s",
-            }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-// FocusToggle: alterna el foco del Resumen entre Gastos e Ingresos. La pastilla
-// activa toma el color semántico del tipo (rojo gasto / verde ingreso) para que
-// se lea de un vistazo, a diferencia de PeriodPills que siempre usa el acento.
-export function FocusToggle({ size = "md" }: { size?: "sm" | "md" }) {
-  const { focus, setFocus } = useStore();
-  const pad = size === "sm" ? "5px 11px" : "7px 15px";
-  const fs = size === "sm" ? 12.5 : 13.5;
-  const items: { value: TxType; label: string; color: string }[] = [
-    { value: "expense", label: "Gastos", color: "var(--red)" },
-    { value: "income", label: "Ingresos", color: "var(--green)" },
-  ];
-  return (
-    <div style={{ display: "flex", gap: 3, background: "var(--bg-2)", padding: 3, borderRadius: 999 }}>
-      {items.map((it) => {
-        const on = it.value === focus;
-        return (
-          <button
-            key={it.value}
-            onClick={() => setFocus(it.value)}
-            style={{
-              padding: pad,
-              borderRadius: 999,
-              fontSize: fs,
-              fontWeight: 700,
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              color: on ? "var(--on-accent)" : "var(--text-2)",
-              background: on ? it.color : "transparent",
-              boxShadow: on ? "var(--shadow-fab)" : "none",
-              transition: "background .15s, color .15s",
-            }}
-          >
-            {it.label}
-          </button>
-        );
-      })}
+    <div
+      role={error ? "alert" : "status"}
+      className="card"
+      style={{
+        position: "fixed",
+        zIndex: 80,
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: error ? "8px 6px 8px 14px" : "11px 16px",
+        boxShadow: "var(--shadow-soft)",
+        borderColor: "var(--line-strong)",
+        fontFamily: "var(--font-app), ui-sans-serif, system-ui, sans-serif",
+        color: "var(--text)",
+        fontWeight: 700,
+        fontSize: 14,
+        width: "max-content",
+        maxWidth: "min(92vw, 420px)",
+        ...(desktop
+          ? { right: 24, bottom: 24 }
+          : { left: "50%", transform: "translateX(-50%)", top: "calc(env(safe-area-inset-top) + 12px)" }),
+      }}
+    >
+      <Icon name={error ? "CircleAlert" : "CircleCheck"} size={18} stroke={2.2} color={error ? "var(--expense)" : "var(--income)"} />
+      <span style={{ lineHeight: 1.35 }}>{notice.text}</span>
+      {error && (
+        <button className="icon-btn" onClick={dismissNotice} aria-label="Cerrar aviso" style={{ flex: "0 0 auto" }}>
+          <Icon name="X" size={18} stroke={2.2} color="var(--text-2)" />
+        </button>
+      )}
     </div>
   );
 }
@@ -235,12 +274,12 @@ export function StateView({
   kind: "loading" | "empty" | "error";
   onRetry?: () => void;
   title?: string;
-  message?: string;
+  message?: ReactNode;
   action?: { label: string; onClick: () => void };
 }) {
   if (kind === "loading") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, gap: 18, height: "100%" }}>
+      <div role="status" aria-label="Cargando" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40, gap: 18, height: "100%" }}>
         <div className="skeleton-donut" />
         <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "80%", maxWidth: 320 }}>
           {[0, 1, 2].map((i) => (
@@ -251,7 +290,7 @@ export function StateView({
     );
   }
   const map: Record<string, { icon: string; title: string; body: string }> = {
-    empty: { icon: "Wallet", title: "Sin movimientos", body: "No registraste gastos ni ingresos en este período. Tocá + o − para empezar." },
+    empty: { icon: "Wallet", title: "Sin movimientos", body: "No hay movimientos en este período. Tocá − para cargar un gasto o + para un ingreso." },
     error: { icon: "CloudOff", title: "No se pudo cargar", body: "Hubo un problema al traer tus datos. Revisá la conexión e intentá de nuevo." },
   };
   const s = map[kind] || map.empty;
@@ -261,19 +300,20 @@ export function StateView({
       <div style={{ width: 76, height: 76, borderRadius: "50%", display: "grid", placeItems: "center", background: "var(--bg-2)", color: "var(--text-3)" }}>
         <Icon name={s.icon} size={34} stroke={1.8} color="var(--text-3)" />
       </div>
-      <div style={{ fontWeight: 800, fontSize: 18 }}>{title ?? s.title}</div>
-      <div style={{ color: "var(--text-2)", fontSize: 14.5, maxWidth: 300, lineHeight: 1.5 }}>{message ?? s.body}</div>
+      <div style={{ fontWeight: 800, fontSize: 17 }}>{title ?? s.title}</div>
+      <div style={{ color: "var(--text-2)", fontSize: 15, maxWidth: 300, lineHeight: 1.5 }}>{message ?? s.body}</div>
       {primaryAction && (
         <button
           onClick={primaryAction.onClick}
           style={{
             marginTop: 6,
-            padding: "10px 20px",
+            padding: "12px 20px",
+            minHeight: 44,
             borderRadius: 999,
             border: "none",
             cursor: "pointer",
             fontFamily: "inherit",
-            background: "var(--green)",
+            background: "var(--accent)",
             color: "var(--on-accent)",
             fontWeight: 800,
             fontSize: 14,

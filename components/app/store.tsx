@@ -28,6 +28,8 @@ import {
 } from "@/lib/date-range";
 import { type TxFilter, EMPTY_TX_FILTER } from "@/lib/tx-filter";
 import { addInterval } from "@/lib/recurrence";
+import { fmt } from "@/lib/format";
+import { closingCutoff, carryFor, openingBalance, type CarryResult } from "@/lib/balance";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -50,6 +52,10 @@ export interface UITx {
   // Fijo (Subscription) al que corresponde este movimiento, si lo registró el
   // botón "Registrar pago". Alimenta "Pagos registrados" en el editor del fijo.
   sub: string | null;
+  // Transferencia entre cuentas: no es ingreso ni gasto, no entra en totales ni saldo.
+  transfer: boolean;
+  // Moneda del movimiento. La app no convierte: el saldo suma todo sin conversión.
+  currency: string;
 }
 
 // Recurrentes (gastos/ingresos fijos). Dates stay as YYYY-MM-DD strings —
@@ -86,7 +92,13 @@ export interface UIBudget {
   categoryId: string | null;
 }
 
-export type Theme = "light" | "dark";
+// "system" sigue la apariencia del dispositivo (matchMedia); el tema resuelto
+// ("light" | "dark") se escribe en <html data-theme>.
+export type Theme = "system" | "light" | "dark";
+export interface Notice {
+  kind: "error" | "success";
+  text: string;
+}
 export type DashStyle = "A" | "B" | "C";
 export type Accent = "verde" | "teal" | "bosque";
 export type AppCurrency = "ARS" | "USD" | "EUR";
@@ -146,7 +158,8 @@ interface StoreValue {
   setSim: (s: Sim) => void;
   loading: boolean;
   loadError: boolean;
-  notice: string | null;
+  notice: Notice | null;
+  dismissNotice: () => void;
   screen: Screen;
   setScreen: (s: Screen) => void;
   entry: EntryState;
@@ -180,7 +193,31 @@ interface StoreValue {
   ) => Promise<void>;
   budgets: UIBudget[];
   setBudget: (categoryId: string, limit: number) => Promise<void>;
+  // ---- saldo acumulado ("dinero en mi poder") ----
+  initialYear: number;
+  // true = cada período arranca con lo que quedó del anterior; false = solo el período.
+  carryOver: boolean;
+  setCarryOver: (v: boolean) => void;
+  carry: CarryState;
+  retryHistory: () => void;
+  // saldo inicial (Notion · Accounts.InitialBalance); null mientras carga
+  initialBalance: number | null;
+  // no se pudo leer el saldo inicial de Notion (retryHistory reintenta)
+  initialBalanceError: boolean;
+  setInitialBalance: (n: number) => Promise<void>;
+  // todos los movimientos cargados (años en caché + historial), con optimistas
+  allTx: UITx[];
+  // saldo justo antes de `date` (exclusivo); null si todavía no se puede calcular
+  balanceBefore: (date: Date) => number | null;
+  // el rango visible depende de años que aún no se trajeron
+  rangePending: boolean;
 }
+
+export type CarryState =
+  | { status: "off" }
+  | { status: "loading" }
+  | { status: "error" }
+  | ({ status: "ready" } & CarryResult);
 
 export interface NewSubInput {
   name: string;
@@ -222,6 +259,8 @@ function txToUI(t: Transaction, byId: Record<string, UICategory>): UITx {
     note: t.notes || "",
     type,
     sub: t.subscriptionId,
+    transfer: t.type === "Transferencia",
+    currency: t.currency ?? "ARS",
   };
 }
 
@@ -256,6 +295,33 @@ function budgetToUI(b: Budget): UIBudget {
     alertAt80: b.alertAt80,
     categoryId: b.categoryId,
   };
+}
+
+// Cambios locales (crear/editar/borrar) numerados en secuencia. Al llegar la
+// foto de un año del servidor (que puede ser anterior a esos cambios), lo que se
+// tocó DESPUÉS de lanzar el pedido gana: no se pierde un alta recién confirmada
+// ni se resucita algo borrado o movido de año. `year` = año donde vive ahora
+// (null = borrado).
+interface Touch {
+  seq: number;
+  year: number | null;
+}
+
+function mergeYear(y: number, local: UITx[], fresh: UITx[], touches: Map<string, Touch>, since: number): UITx[] {
+  const recent = (id: string) => {
+    const t = touches.get(id);
+    return t && t.seq > since ? t : undefined;
+  };
+  const freshIds = new Set(fresh.map((t) => t.id));
+  const merged: UITx[] = [];
+  for (const t of fresh) {
+    const r = recent(t.id);
+    if (!r) merged.push(t);
+    else if (r.year === y) merged.push(local.find((l) => l.id === t.id) ?? t);
+    // si no: se borró o se movió de año después del pedido → no se resucita
+  }
+  const extras = local.filter((l) => !freshIds.has(l.id) && (l.id.startsWith("tmp-") || recent(l.id)?.year === y));
+  return [...extras, ...merged];
 }
 
 function persist(key: string, value: string) {
@@ -355,6 +421,19 @@ export function StoreProvider({
     );
     return { [initialYear]: initialTransactions.map((t) => txToUI(t, seedById)) };
   });
+  // Años cuyo contenido llegó completo (del servidor o de la API). Distinto de
+  // "tiene entrada en txByYear": upsertTx puede crear un año con solo un movimiento
+  // optimista, y ese año no está cargado.
+  const [loadedYears, setLoadedYears] = useState<Set<number>>(() => new Set([initialYear]));
+  // Historial anterior a initialYear (saldo arrastrado). Se pide UNA vez y solo con
+  // el acumulado activo.
+  const [history, setHistory] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [carryOver, setCarryOverRaw] = useState(true);
+  const [initialBalance, setInitialBalanceRaw] = useState<number | null>(null);
+  const isLoaded = useCallback(
+    (y: number) => loadedYears.has(y) || (history === "ready" && y < initialYear),
+    [loadedYears, history, initialYear]
+  );
 
   const now = new Date();
   const [periodRaw, setPeriodRaw] = useState<Period>("Mes");
@@ -366,7 +445,7 @@ export function StoreProvider({
   const year = anchor.getFullYear();
   const [loading, setLoading] = useState(false);
 
-  const [theme, setThemeRaw] = useState<Theme>("light");
+  const [theme, setThemeRaw] = useState<Theme>("system");
   const [dashStyle, setDashStyleRaw] = useState<DashStyle>("A");
   const [accent, setAccentRaw] = useState<Accent>("verde");
   const [currency, setCurrencyRaw] = useState<AppCurrency>("EUR");
@@ -378,10 +457,11 @@ export function StoreProvider({
   const [sim, setSim] = useState<Sim>("normal");
   const loadError = !!initialLoadError;
   const [screen, setScreen] = useState<Screen>("dashboard");
+  const [prefsReady, setPrefsReady] = useState(false);
 
   // hydrate prefs from localStorage (external store) — client only, runs once.
   useEffect(() => {
-    const t = (localStorage.getItem("um.theme") as Theme) || "light";
+    const t = (localStorage.getItem("um.theme") as Theme) || "system";
     const d = (localStorage.getItem("um.dash") as DashStyle) || "A";
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
@@ -393,6 +473,7 @@ export function StoreProvider({
     setAccentRaw(a);
     setCurrencyRaw(c);
     setFocusRaw(f);
+    setCarryOverRaw(localStorage.getItem("um.carry") !== "0");
     if (p === "Personalizado") {
       const rs = localStorage.getItem("um.rangeStart");
       const re = localStorage.getItem("um.rangeEnd");
@@ -404,7 +485,29 @@ export function StoreProvider({
     } else {
       setPeriodRaw(p);
     }
+    setPrefsReady(true);
   }, []);
+
+  // Escribe tema resuelto y acento en <html> (el script de app/layout.tsx ya lo
+  // hizo antes del primer paint; esto lo mantiene al cambiar). "system" escucha
+  // los cambios de apariencia del dispositivo. Espera a hidratar las prefs para
+  // no pisar el valor guardado con el default.
+  useEffect(() => {
+    if (!prefsReady) return;
+    const root = document.documentElement;
+    root.dataset.accent = accent;
+    if (theme !== "system") {
+      root.dataset.theme = theme;
+      return;
+    }
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      root.dataset.theme = mq.matches ? "dark" : "light";
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [prefsReady, theme, accent]);
 
   const setTheme = useCallback((v: Theme) => {
     setThemeRaw(v);
@@ -421,6 +524,10 @@ export function StoreProvider({
   const setCurrency = useCallback((v: AppCurrency) => {
     setCurrencyRaw(v);
     persist("um.currency", v);
+  }, []);
+  const setCarryOver = useCallback((v: boolean) => {
+    setCarryOverRaw(v);
+    persist("um.carry", v ? "1" : "0");
   }, []);
   const setFocus = useCallback((v: TxType) => {
     setFocusRaw(v);
@@ -495,14 +602,23 @@ export function StoreProvider({
     setEntry({ open: true, kind: sub.type, date: null, edit: null, sub });
   }, []);
 
-  // toast de errores (se auto-limpia)
-  const [notice, setNotice] = useState<string | null>(null);
+  // avisos: los errores quedan hasta que se cierran (time-boxed UI es un
+  // problema de accesibilidad); los éxitos se limpian solos a los 2.5 s.
+  const [notice, setNotice] = useState<Notice | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showNotice = useCallback((msg: string) => {
-    setNotice(msg);
+  const showNotice = useCallback((text: string, kind: Notice["kind"] = "error") => {
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    // los avisos con motivo son más largos: más tiempo para leerlos
-    noticeTimer.current = setTimeout(() => setNotice(null), Math.min(9000, 3000 + msg.length * 50));
+    if (kind === "error") {
+      setNotice({ kind, text });
+      return;
+    }
+    // un éxito no tapa un error que todavía no se leyó; el timer solo limpia éxitos
+    setNotice((cur) => (cur && cur.kind === "error" ? cur : { kind, text }));
+    noticeTimer.current = setTimeout(() => setNotice((cur) => (cur && cur.kind === "success" ? null : cur)), 2500);
+  }, []);
+  const dismissNotice = useCallback(() => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(null);
   }, []);
   // error de una mutación: muestra el motivo y, si la sesión venció, manda al login
   const notifyFailure = useCallback(
@@ -519,17 +635,24 @@ export function StoreProvider({
 
   // fetch a year if not cached (dedup de requests en vuelo)
   const inFlightYears = useRef<Set<number>>(new Set());
+  const touches = useRef(new Map<string, Touch>());
+  const touchSeq = useRef(0);
   const ensureYear = useCallback(
     async (y: number) => {
-      if (txByYear[y] || inFlightYears.current.has(y)) return;
+      if (isLoaded(y) || inFlightYears.current.has(y)) return;
       inFlightYears.current.add(y);
       setLoading(true);
+      const since = touchSeq.current;
       try {
         const res = await fetch(`/api/transactions?year=${y}`);
         if (!res.ok) throw new Error(`GET /api/transactions?year=${y} → ${res.status}`);
         const data = await res.json();
         const list: Transaction[] = data.transactions || [];
-        setTxByYear((prev) => ({ ...prev, [y]: list.map((t) => txToUI(t, byId)) }));
+        // lo que se creó/editó/borró mientras el pedido estaba en vuelo gana
+        // sobre la foto del servidor (si no, el fetch lo pisa y el saldo salta)
+        const fresh = list.map((t) => txToUI(t, byId));
+        setTxByYear((prev) => ({ ...prev, [y]: mergeYear(y, prev[y] ?? [], fresh, touches.current, since) }));
+        setLoadedYears((prev) => new Set(prev).add(y));
       } catch (err) {
         console.error(err);
         setSim("error");
@@ -538,7 +661,7 @@ export function StoreProvider({
         setLoading(false);
       }
     },
-    [txByYear, byId]
+    [isLoaded, byId]
   );
 
   const navMonth = useCallback(
@@ -546,19 +669,27 @@ export function StoreProvider({
       setSim((s) => (s === "empty" || s === "error" ? "normal" : s));
       const next = addMonthsClamped(anchor, delta);
       setAnchor(next);
-      if (!txByYear[next.getFullYear()]) void ensureYear(next.getFullYear());
+      if (!isLoaded(next.getFullYear())) void ensureYear(next.getFullYear());
     },
-    [anchor, txByYear, ensureYear]
+    [anchor, isLoaded, ensureYear]
   );
 
   // asegura en cache todos los años que tocan el rango visible y el de
   // comparación — cubre pills fijas, navRange y el selector de rango custom.
   useEffect(() => {
     const years = new Set<number>([...yearsIn(range), ...yearsIn(prevRange)]);
+    if (carryOver) {
+      // el saldo necesita todos los años desde initialYear hasta el corte
+      const last = closingCutoff(range, new Date()).until.getFullYear();
+      for (let y = initialYear; y <= last; y++) years.add(y);
+    }
     years.forEach((y) => {
-      if (!txByYear[y]) void ensureYear(y);
+      if (!isLoaded(y)) void ensureYear(y);
     });
-  }, [range, prevRange, txByYear, ensureYear]);
+  }, [range, prevRange, carryOver, initialYear, isLoaded, ensureYear]);
+
+  // rango visible con años todavía sin traer: evita mostrar un "Sin movimientos" falso
+  const rangePending = useMemo(() => yearsIn(range).some((y) => !isLoaded(y)), [range, isLoaded]);
 
   // presupuestos del mes que muestra el Calendario/anchor (son mensuales por
   // definición del schema de Notion — no siguen al rango del Resumen).
@@ -625,6 +756,7 @@ export function StoreProvider({
     let income = 0;
     let expense = 0;
     prevVisibleTx.forEach((x) => {
+      if (x.transfer) return;
       if (x.type === "income") income += x.amount;
       else expense += x.amount;
     });
@@ -635,7 +767,7 @@ export function StoreProvider({
     const totals: Record<string, number> = {};
     let grand = 0;
     visibleTx.forEach((x) => {
-      if (!x.cat || !byId[x.cat] || byId[x.cat].type !== focus) return;
+      if (x.transfer || !x.cat || !byId[x.cat] || byId[x.cat].type !== focus) return;
       totals[x.cat] = (totals[x.cat] || 0) + x.amount;
       grand += x.amount;
     });
@@ -655,14 +787,133 @@ export function StoreProvider({
     let income = 0;
     let expense = 0;
     visibleTx.forEach((x) => {
+      if (x.transfer) return;
       if (x.type === "income") income += x.amount;
       else expense += x.amount;
     });
     return { income, expense, balance: income - expense };
   }, [visibleTx]);
 
+  // ---- saldo acumulado ----
+  const allTx = useMemo(() => Object.values(txByYear).flat(), [txByYear]);
+
+  const loadHistory = useCallback(async () => {
+    setHistory("loading");
+    const since = touchSeq.current;
+    try {
+      const res = await fetch(`/api/transactions/history?before=${initialYear}-01-01`);
+      if (!res.ok) throw await httpError(res);
+      const data = await res.json();
+      const list: Transaction[] = data.transactions ?? [];
+      const byYear: Record<number, UITx[]> = {};
+      for (const t of list) {
+        const ui = txToUI(t, byId);
+        (byYear[ui.date.getFullYear()] ||= []).push(ui);
+      }
+      setTxByYear((prev) => {
+        const next = { ...prev };
+        for (const [y, items] of Object.entries(byYear)) {
+          // la respuesta puede tardar: lo editado mientras tanto (incluso en un
+          // año que ensureYear ya trajo) no se pisa con la foto vieja
+          next[Number(y)] = mergeYear(Number(y), prev[Number(y)] ?? [], items, touches.current, since);
+        }
+        return next;
+      });
+      setLoadedYears((prev) => {
+        const next = new Set(prev);
+        Object.keys(byYear).forEach((y) => next.add(Number(y)));
+        return next;
+      });
+      setHistory("ready");
+    } catch (err) {
+      console.error(err);
+      setHistory("error");
+    }
+  }, [initialYear, byId]);
+
+  // una sola llamada, y solo con el acumulado activo
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- dispara el fetch del historial (sistema externo)
+    if (prefsReady && carryOver && !initialLoadError && history === "idle") void loadHistory();
+  }, [prefsReady, carryOver, initialLoadError, history, loadHistory]);
+
+  // saldo inicial: una vez al montar. Si el workspace no tiene base Accounts (400)
+  // no hay nada que leer y vale 0; cualquier otro fallo es un error visible (no un
+  // 0 silencioso que mostraría un Disponible equivocado como si fuera real).
+  const [initialBalanceError, setInitialBalanceError] = useState(false);
+  const [openingAttempt, setOpeningAttempt] = useState(0);
+  useEffect(() => {
+    if (!prefsReady || initialLoadError) return;
+    let cancelled = false;
+    fetch("/api/accounts/opening")
+      .then(async (res) => {
+        if (res.status === 400) return { initialBalance: 0 };
+        if (!res.ok) throw await httpError(res);
+        return res.json() as Promise<{ initialBalance?: number }>;
+      })
+      .then((d) => {
+        if (cancelled) return;
+        setInitialBalanceRaw(typeof d.initialBalance === "number" ? d.initialBalance : 0);
+        setInitialBalanceError(false);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setInitialBalanceError(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prefsReady, initialLoadError, openingAttempt]);
+
+  const retryHistory = useCallback(() => {
+    setHistory((h) => (h === "error" ? "idle" : h));
+    if (initialBalanceError) {
+      setInitialBalanceError(false);
+      setOpeningAttempt((n) => n + 1);
+    }
+  }, [initialBalanceError]);
+
+  const setInitialBalance = useCallback<StoreValue["setInitialBalance"]>(async (n) => {
+    const res = await fetch("/api/accounts/opening", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ initialBalance: n }),
+    });
+    if (!res.ok) throw await httpError(res);
+    setInitialBalanceRaw(n);
+  }, []);
+
+  // Años completos desde initialYear hasta `lastYear` (y el historial anterior).
+  const ledgerReady = useCallback(
+    (lastYear: number) => {
+      if (!carryOver || initialLoadError || history !== "ready" || initialBalance === null) return false;
+      for (let y = initialYear; y <= lastYear; y++) if (!isLoaded(y)) return false;
+      return true;
+    },
+    [carryOver, initialLoadError, history, initialBalance, initialYear, isLoaded]
+  );
+
+  const carry = useMemo<CarryState>(() => {
+    if (!carryOver || sim !== "normal") return { status: "off" };
+    if (initialLoadError || history === "error" || initialBalanceError) return { status: "error" };
+    const now = new Date();
+    const last = closingCutoff(range, now).until.getFullYear();
+    if (!ledgerReady(last)) return { status: "loading" };
+    if (yearsIn(range).some((y) => !isLoaded(y))) return { status: "loading" };
+    return { status: "ready", ...carryFor(allTx, range, now, initialBalance ?? 0) };
+  }, [carryOver, sim, initialLoadError, history, initialBalanceError, range, ledgerReady, isLoaded, allTx, initialBalance]);
+
+  const balanceBefore = useCallback(
+    (date: Date): number | null => {
+      if (!ledgerReady(new Date(date.getTime() - 1).getFullYear())) return null;
+      return openingBalance(allTx, date, initialBalance ?? 0);
+    },
+    [ledgerReady, allTx, initialBalance]
+  );
+
   // ---- mutations ----
   const upsertTx = useCallback((y: number, tx: UITx) => {
+    touches.current.set(tx.id, { seq: ++touchSeq.current, year: y });
     setTxByYear((prev) => {
       const list = prev[y] ? [...prev[y]] : [];
       const i = list.findIndex((t) => t.id === tx.id);
@@ -673,6 +924,7 @@ export function StoreProvider({
   }, []);
 
   const removeTx = useCallback((id: string) => {
+    touches.current.set(id, { seq: ++touchSeq.current, year: null });
     setTxByYear((prev) => {
       const out: Record<number, UITx[]> = {};
       for (const [k, list] of Object.entries(prev)) {
@@ -708,6 +960,8 @@ export function StoreProvider({
         note,
         type: category?.type ?? "expense",
         sub: null,
+        transfer: false,
+        currency,
       });
       void fetch("/api/transactions", {
         method: "POST",
@@ -727,13 +981,14 @@ export function StoreProvider({
           removeTx(tempId);
           const ui = txToUI(created, byId);
           upsertTx(ui.date.getFullYear(), ui);
+          showNotice(`${kind === "Ingreso" ? "Ingreso" : "Gasto"} agregado · ${fmt(amount, currency)}`, "success");
         })
         .catch((err) => {
           removeTx(tempId);
           notifyFailure(err, "No se pudo guardar el movimiento");
         });
     },
-    [byId, upsertTx, removeTx, currency, notifyFailure]
+    [byId, upsertTx, removeTx, currency, notifyFailure, showNotice]
   );
 
   const updateTransaction = useCallback<StoreValue["updateTransaction"]>(
@@ -943,6 +1198,8 @@ export function StoreProvider({
         note: input.note,
         type: prev.type,
         sub: prev.id,
+        transfer: false,
+        currency: prev.currency,
       });
       setSubscriptions((list) => list.map((s) => (s.id === prev.id ? optimisticSub : s)));
 
@@ -972,6 +1229,7 @@ export function StoreProvider({
         setSubscriptions((list) => list.map((s) => (s.id === prev.id ? subToUI(subscription) : s)));
         const ui = txToUI(transaction, byId);
         upsertTx(ui.date.getFullYear(), ui);
+        showNotice(`Pago registrado · ${prev.name}`, "success");
       } catch (err) {
         removeTx(tempId);
         setSubscriptions((list) => list.map((s) => (s.id === prev.id ? prev : s)));
@@ -1016,6 +1274,7 @@ export function StoreProvider({
     loading,
     loadError,
     notice,
+    dismissNotice,
     screen,
     setScreen,
     entry,
@@ -1038,6 +1297,17 @@ export function StoreProvider({
     confirmSubscription,
     budgets,
     setBudget,
+    initialYear,
+    carryOver,
+    setCarryOver,
+    carry,
+    retryHistory,
+    initialBalance,
+    initialBalanceError,
+    setInitialBalance,
+    allTx,
+    balanceBefore,
+    rangePending,
   };
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>;

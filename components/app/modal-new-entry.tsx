@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, type ReactNode } from "react";
 import { useStore, toISO, type TxType, type UITx, type UISub } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Segmented } from "./ui";
+import { Sheet, SheetHeader } from "./Sheet";
 import { fmt, fmtDayMonth } from "@/lib/format";
 
 // safe calculator: + − × ÷ with × ÷ precedence
@@ -31,10 +32,10 @@ function Key({ label, onClick, variant, accent }: { label: ReactNode; onClick: (
       onClick={onClick}
       className="key-btn"
       style={{
-        border: "none",
+        border: "1px solid var(--line)",
         cursor: "pointer",
         fontFamily: "inherit",
-        borderRadius: 14,
+        borderRadius: 12,
         fontSize: 22,
         fontWeight: 700,
         background: variant === "op" ? "var(--bg-2)" : "var(--surface)",
@@ -42,7 +43,6 @@ function Key({ label, onClick, variant, accent }: { label: ReactNode; onClick: (
         display: "grid",
         placeItems: "center",
         height: 54,
-        boxShadow: "var(--shadow-card)",
       }}
     >
       {label}
@@ -79,6 +79,8 @@ function EntryForm({
   const [note, setNote] = useState(edit ? edit.note : fromSub ? fromSub.name : "");
   const [date, setDate] = useState(initialDate);
   const [panel, setPanel] = useState<"pad" | "cats">("pad");
+  // confirmación dentro del propio sheet: descartar lo escrito / eliminar el movimiento
+  const [confirmKind, setConfirmKind] = useState<"discard" | "delete" | null>(null);
 
   // Si se borra el selector de fecha nativo (iOS/Android "Borrar") queda "":
   // se usa hoy en vez de dejar el botón deshabilitado sin explicación.
@@ -127,16 +129,23 @@ function EntryForm({
     closeEntry();
   }
 
+  // Escape / scrim: si hay monto o nota sin guardar, pregunta antes de descartar.
+  const dirty = !edit && !fromSub && (expr !== "" || note.trim() !== "");
+  function requestClose() {
+    if (confirmKind) setConfirmKind(null);
+    else if (panel === "cats") setPanel("pad");
+    else if (dirty) setConfirmKind("discard");
+    else closeEntry();
+  }
+
   // teclado físico (desktop): dígitos, operadores, Enter, Backspace, Escape.
   // Sin array de deps a propósito: re-suscribe cada render para usar closures frescos.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeEntry();
-        return;
-      }
-      if (e.target instanceof HTMLInputElement || panel !== "pad") return;
+      if (e.target instanceof HTMLInputElement || panel !== "pad" || confirmKind) return;
+      // Enter sobre un botón enfocado (Cerrar, Eliminar, tipo…) activa ESE botón:
+      // no tiene que guardar el movimiento de paso.
+      if (e.key === "Enter" && e.target instanceof Element && e.target.closest("button, a, select")) return;
       if (/^[0-9]$/.test(e.key)) push(e.key);
       else if (e.key === "." || e.key === ",") push(".");
       else if (e.key === "+") push("+");
@@ -152,40 +161,68 @@ function EntryForm({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const accent = type === "expense" ? "var(--red)" : "var(--green)";
+  const accent = type === "expense" ? "var(--expense)" : "var(--income)";
+  const fill = type === "expense" ? "var(--expense-fill)" : "var(--income-fill)";
+  const onFill = type === "expense" ? "var(--on-expense)" : "var(--on-income)";
   const canSave = result > 0 && !!catId;
 
   return (
-    <div className="um-modal-scrim" onClick={closeEntry}>
-      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, display: "flex", flexDirection: "column", maxHeight: "94dvh" }}>
-        <div style={{ padding: "14px 18px 10px", display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
+    <Sheet label={fromSub ? "Registrar pago" : edit ? "Editar movimiento" : "Agregar movimiento"} onClose={requestClose} style={{ display: "flex", flexDirection: "column", maxHeight: "94dvh" }}>
+      {confirmKind ? (
+        <div style={{ padding: "28px 22px calc(22px + env(safe-area-inset-bottom))", textAlign: "center", display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 className="sheet-title" style={{ margin: 0 }}>
+            {confirmKind === "discard"
+              ? `¿Descartar este ${type === "expense" ? "gasto" : "ingreso"}?`
+              : `¿Eliminar este ${type === "expense" ? "gasto" : "ingreso"}?`}
+          </h2>
+          <p className="caption" style={{ margin: 0 }}>
+            {confirmKind === "discard" ? "Se pierde lo que escribiste." : "No se puede deshacer."}
+          </p>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <button
+              onClick={() => setConfirmKind(null)}
+              data-autofocus
+              style={{ flex: 1, minHeight: 48, borderRadius: 12, border: "1.5px solid var(--line)", background: "var(--surface)", color: "var(--text-2)", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              {confirmKind === "discard" ? "Seguir editando" : "Cancelar"}
+            </button>
+            <button
+              onClick={confirmKind === "discard" ? closeEntry : remove}
+              style={{ flex: 1, minHeight: 48, borderRadius: 12, border: "none", background: "var(--expense-fill)", color: "var(--on-expense)", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              {confirmKind === "discard" ? "Descartar" : "Eliminar"}
+            </button>
+          </div>
+        </div>
+      ) : panel === "cats" ? (
+        <SheetHeader title="Elegí categoría" onClose={() => (dirty ? setConfirmKind("discard") : closeEntry())} onBack={() => setPanel("pad")} backLabel="Volver al monto" />
+      ) : (
+        <div style={{ padding: "14px 12px 10px 18px", display: "flex", alignItems: "center", gap: 8, flex: "0 0 auto" }}>
           {fromSub ? (
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-3)" }}>
-                Registrar pago
-              </div>
+              <div className="eyebrow">Registrar pago</div>
               <div style={{ fontWeight: 800, fontSize: 16, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {fromSub.name}
               </div>
             </div>
           ) : (
             <div style={{ flex: 1 }}>
-              <Segmented value={type} onChange={(v) => { setType(v); setCatId(null); }} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
+              <Segmented label="Tipo de movimiento" value={type} onChange={(v) => { setType(v); setCatId(null); }} options={[{ value: "expense", label: "Gasto" }, { value: "income", label: "Ingreso" }]} />
             </div>
           )}
           {edit && !fromSub && (
-            <button className="icon-btn" onClick={remove} aria-label="Eliminar" style={{ background: "var(--red-soft)" }}>
-              <Icon name="Trash2" size={19} stroke={2} color="var(--red-600)" />
+            <button className="icon-btn" onClick={() => setConfirmKind("delete")} aria-label="Eliminar" style={{ background: "var(--expense-soft)" }}>
+              <Icon name="Trash2" size={19} stroke={2} color="var(--expense)" />
             </button>
           )}
-          <button className="icon-btn" onClick={closeEntry} aria-label="Cerrar">
+          <button className="icon-btn" onClick={requestClose} aria-label="Cerrar">
             <Icon name="X" size={22} stroke={2.2} color="var(--text-2)" />
           </button>
         </div>
+      )}
 
-        {panel === "cats" ? (
+        {confirmKind ? null : panel === "cats" ? (
           <div className="app-scroll" style={{ flex: 1, overflowY: "auto", padding: "6px 18px 20px" }}>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".05em", textTransform: "uppercase", color: "var(--text-3)", margin: "6px 2px 14px" }}>Elegí categoría</div>
             <div className="cat-grid">
               {cats.map((c) => (
                 <button
@@ -226,13 +263,13 @@ function EntryForm({
               </button>
 
                 <div style={{ display: "flex", gap: 10 }}>
-                  <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
+                  <div className="field-wrap" style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
                     <Icon name="PenLine" size={17} stroke={2} color="var(--text-3)" />
-                    <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
+                    <input aria-label="Nota" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Nota (opcional)" style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }} />
                   </div>
-                  <label style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)", cursor: "pointer", minWidth: 0, flex: "0 1 auto" }}>
+                  <label className="field-wrap" style={{ display: "flex", alignItems: "center", gap: 7, padding: "10px 12px", borderRadius: 14, background: "var(--bg-2)", border: "1px solid var(--line)", cursor: "pointer", minWidth: 0, flex: "0 1 auto" }}>
                     <Icon name="Calendar" size={17} stroke={2} color="var(--text-3)" />
-                    <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", minWidth: 0 }} />
+                    <input type="date" aria-label="Fecha" value={date} onChange={(e) => setDate(e.target.value)} style={{ border: "none", background: "transparent", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)", minWidth: 0 }} />
                   </label>
                 </div>
             </div>
@@ -247,9 +284,9 @@ function EntryForm({
               <button
                 onClick={confirm}
                 disabled={!canSave}
-                style={{ marginTop: 12, width: "100%", padding: "15px", borderRadius: 14, border: "none", fontFamily: "inherit", background: canSave ? accent : "var(--bg-2)", color: canSave ? "#fff" : "var(--text-3)", fontWeight: 800, fontSize: 16, cursor: canSave ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}
+                style={{ marginTop: 12, width: "100%", padding: "15px", borderRadius: 14, border: "none", fontFamily: "inherit", background: canSave ? fill : "var(--bg-2)", color: canSave ? onFill : "var(--text-3)", fontWeight: 800, fontSize: 16, cursor: canSave ? "pointer" : "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 9 }}
               >
-                <Icon name="Check" size={20} stroke={2.6} color={canSave ? "#fff" : "var(--text-3)"} />
+                <Icon name="Check" size={20} stroke={2.6} color={canSave ? onFill : "var(--text-3)"} />
                 {fromSub
                   ? `Registrar pago · ${fmtDayMonth(effectiveDate)}`
                   : edit
@@ -261,8 +298,7 @@ function EntryForm({
             </div>
           </div>
         )}
-      </div>
-    </div>
+    </Sheet>
   );
 }
 

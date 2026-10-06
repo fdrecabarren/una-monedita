@@ -24,9 +24,9 @@ function statusOf(sub: UISub, today: string): { label: string; tone: Tone } {
 }
 
 const TONE_COLOR: Record<Tone, string> = {
-  late: "var(--red)",
+  late: "var(--expense)",
   due: "var(--text-2)",
-  paid: "var(--green-700)",
+  paid: "var(--accent-ink)",
   idle: "var(--text-3)",
 };
 
@@ -48,7 +48,6 @@ function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEd
         borderRadius: 14,
         background: "var(--surface)",
         border: "1px solid var(--line)",
-        boxShadow: "var(--shadow-card)",
         opacity: paused ? 0.6 : 1,
       }}
     >
@@ -64,7 +63,7 @@ function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEd
             {st.label}
           </div>
         </div>
-        <div className="num tnum" style={{ fontWeight: 700, fontSize: 14.5, color: sub.type === "income" ? "var(--green)" : "var(--text)", flex: "0 0 auto" }}>
+        <div className="num tnum" style={{ fontWeight: 600, fontSize: 14.5, color: sub.type === "income" ? "var(--income)" : "var(--text)", flex: "0 0 auto" }}>
           {fmt(sub.amount, sub.currency)}
         </div>
       </button>
@@ -74,9 +73,9 @@ function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEd
           className="icon-btn"
           title="Registrar pago"
           aria-label="Registrar pago"
-          style={{ width: 36, height: 36, borderRadius: 11, background: paid ? "var(--bg-2)" : "var(--green-soft)", flex: "0 0 auto" }}
+          style={{ width: 44, height: 44, borderRadius: 12, background: paid ? "var(--bg-2)" : "var(--accent-soft)", flex: "0 0 auto" }}
         >
-          <Icon name="Check" size={18} stroke={2.4} color={paid ? "var(--text-3)" : "var(--green-700)"} />
+          <Icon name="Check" size={18} stroke={2.4} color={paid ? "var(--text-3)" : "var(--accent-ink)"} />
         </button>
       )}
     </div>
@@ -111,7 +110,7 @@ export function Recurrentes() {
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 16px 24px" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "8px 4px 16px" }}>
         <div>
-          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-3)" }}>Por mes</div>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-2)" }}>Gastos fijos por mes</div>
           <div className="num" style={{ fontSize: 24, fontWeight: 600, color: "var(--text)", marginTop: 2 }}>
             ≈ {fmt(monthlyTotal, currency)}
           </div>
@@ -123,8 +122,8 @@ export function Recurrentes() {
               borderRadius: 999,
               fontSize: 13,
               fontWeight: 800,
-              background: allPaid ? "var(--green-soft)" : "var(--bg-2)",
-              color: allPaid ? "var(--green-700)" : "var(--text-2)",
+              background: allPaid ? "var(--accent-soft)" : "var(--bg-2)",
+              color: allPaid ? "var(--accent-ink)" : "var(--text-2)",
               flex: "0 0 auto",
             }}
           >

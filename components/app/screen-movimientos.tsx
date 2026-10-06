@@ -36,7 +36,7 @@ function Row({ x, cat }: { x: UITx; cat: UICategory }) {
         <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: "var(--text)" }}>{x.note || cat.name}</div>
         <div style={{ fontSize: 12, color: "var(--text-3)", fontWeight: 600 }}>{fmtDate(x.date)}</div>
       </div>
-      <span className="num tnum" style={{ fontSize: 14, fontWeight: 700, color: inc ? "var(--green)" : "var(--text)" }}>
+      <span className="num tnum" style={{ fontSize: 14, fontWeight: 600, color: inc ? "var(--income)" : "var(--text)" }}>
         {inc ? "+ " : "− "}
         {fmt(x.amount, currency)}
       </span>
@@ -54,7 +54,7 @@ function GroupCard({ g }: { g: Group }) {
   const [open, setOpen] = useState(false);
   const { currency } = useStore();
   return (
-    <div style={{ background: "var(--surface)", borderRadius: 16, padding: "6px 14px", boxShadow: "var(--shadow-card)" }}>
+    <div style={{ background: "var(--surface)", borderRadius: 16, padding: "6px 14px", border: "1px solid var(--line)" }}>
       <button
         onClick={() => setOpen((o) => !o)}
         style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", width: "100%", textAlign: "left" }}
@@ -67,7 +67,7 @@ function GroupCard({ g }: { g: Group }) {
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
-          <div className="num tnum" style={{ fontWeight: 700, fontSize: 15, color: g.cat.type === "income" ? "var(--green)" : "var(--text)" }}>
+          <div className="num tnum" style={{ fontWeight: 600, fontSize: 15, color: g.cat.type === "income" ? "var(--income)" : "var(--text)" }}>
             {g.cat.type === "income" ? "+ " : "− "}
             {fmt(g.total, currency)}
           </div>
@@ -165,20 +165,20 @@ export function Movimientos() {
           padding: "9px 14px",
           borderRadius: 999,
           border: "1.5px solid var(--line)",
-          background: filterCount > 0 ? "var(--green-soft)" : "var(--surface)",
-          color: filterCount > 0 ? "var(--green-700)" : "var(--text-2)",
+          background: filterCount > 0 ? "var(--accent-soft)" : "var(--surface)",
+          color: filterCount > 0 ? "var(--accent-ink)" : "var(--text-2)",
           fontWeight: 800,
           fontSize: 13.5,
           cursor: "pointer",
           fontFamily: "inherit",
         }}
       >
-        <Icon name="SlidersHorizontal" size={16} stroke={2.4} color={filterCount > 0 ? "var(--green-700)" : "var(--text-2)"} />
+        <Icon name="SlidersHorizontal" size={16} stroke={2.4} color={filterCount > 0 ? "var(--accent-ink)" : "var(--text-2)"} />
         Filtros
         {filterCount > 0 && (
           <span
             className="num tnum"
-            style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "var(--green)", color: "var(--on-accent)", fontSize: 11, fontWeight: 800, display: "grid", placeItems: "center" }}
+            style={{ minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "var(--accent)", color: "var(--on-accent)", fontSize: 11, fontWeight: 800, display: "grid", placeItems: "center" }}
           >
             {filterCount}
           </span>
@@ -248,34 +248,34 @@ export function Movimientos() {
           <div
             style={{
               flex: 1,
-              background: txFilter.type === "income" ? "var(--green-soft)" : "var(--red-soft)",
+              background: txFilter.type === "income" ? "var(--income-soft)" : "var(--expense-soft)",
               borderRadius: 14,
               padding: "12px 14px",
             }}
           >
-            <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: txFilter.type === "income" ? "var(--green-700)" : "var(--red-600)" }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: txFilter.type === "income" ? "var(--income)" : "var(--expense)" }}>
               {txFilter.type === "income" ? "Ingresos" : "Gastos"}
             </div>
-            <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: txFilter.type === "income" ? "var(--green-700)" : "var(--red-600)", marginTop: 2 }}>
+            <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: txFilter.type === "income" ? "var(--income)" : "var(--expense)", marginTop: 2 }}>
               {fmt(txFilter.type === "income" ? filteredTotals.income : filteredTotals.expense, currency)}
             </div>
           </div>
         ) : (
           <>
-            <div style={{ flex: 1, background: "var(--green-soft)", borderRadius: 14, padding: "12px 14px" }}>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--green-700)" }}>Ingresos</div>
-              <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--green-700)", marginTop: 2 }}>{fmt(filteredTotals.income, currency)}</div>
+            <div style={{ flex: 1, background: "var(--income-soft)", borderRadius: 14, padding: "12px 14px" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--income)" }}>Ingresos</div>
+              <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--income)", marginTop: 2 }}>{fmt(filteredTotals.income, currency)}</div>
             </div>
-            <div style={{ flex: 1, background: "var(--red-soft)", borderRadius: 14, padding: "12px 14px" }}>
-              <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--red-600)" }}>Gastos</div>
-              <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--red-600)", marginTop: 2 }}>{fmt(filteredTotals.expense, currency)}</div>
+            <div style={{ flex: 1, background: "var(--expense-soft)", borderRadius: 14, padding: "12px 14px" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--expense)" }}>Gastos</div>
+              <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: "var(--expense)", marginTop: 2 }}>{fmt(filteredTotals.expense, currency)}</div>
             </div>
           </>
         )}
       </div>
 
       {flat ? (
-        <div style={{ background: "var(--surface)", borderRadius: 16, padding: "6px 14px", boxShadow: "var(--shadow-card)" }}>
+        <div style={{ background: "var(--surface)", borderRadius: 16, padding: "6px 14px", border: "1px solid var(--line)" }}>
           {flatList.map((x) => {
             const c = x.cat ? byId[x.cat] : undefined;
             if (!c) return null;

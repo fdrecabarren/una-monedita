@@ -3,6 +3,7 @@
 import { useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useStore, failureText, type UISub, type TxType, type NewSubInput } from "./store";
 import { CatBubble, Icon } from "./Icon";
+import { Sheet, SheetHeader, ConfirmRow } from "./Sheet";
 import { Segmented } from "./ui";
 import { firstChargeDate, withDueDay, todayISO } from "@/lib/recurrence";
 import { fmt } from "@/lib/format";
@@ -36,9 +37,9 @@ function FreqPills({ value, onChange }: { value: Frequency; onChange: (v: Freque
             style={{
               padding: "8px 14px",
               borderRadius: 999,
-              border: on ? "1.5px solid var(--green)" : "1.5px solid var(--line)",
-              background: on ? "var(--green-soft)" : "var(--surface)",
-              color: on ? "var(--green-700)" : "var(--text-2)",
+              border: on ? "1.5px solid var(--accent)" : "1.5px solid var(--line)",
+              background: on ? "var(--accent-soft)" : "var(--surface)",
+              color: on ? "var(--accent-ink)" : "var(--text-2)",
               fontWeight: 700,
               fontSize: 13,
               cursor: "pointer",
@@ -56,7 +57,7 @@ function FreqPills({ value, onChange }: { value: Frequency; onChange: (v: Freque
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)" }}>{label}</div>
+      <div className="eyebrow">{label}</div>
       {children}
     </div>
   );
@@ -72,7 +73,6 @@ const inputStyle: CSSProperties = {
   fontSize: 16,
   fontWeight: 700,
   color: "var(--text)",
-  outline: "none",
 };
 
 export function SubEditor({
@@ -102,6 +102,7 @@ export function SubEditor({
   const [nextChargeDate, setNextChargeDate] = useState(existing?.nextChargeDate?.slice(0, 10) ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const cats = useMemo(() => categories.filter((c) => c.type === type), [categories, type]);
   const payments = useMemo(() => (existing ? subPayments(existing.id) : []), [existing, subPayments]);
@@ -172,14 +173,8 @@ export function SubEditor({
   }
 
   return (
-    <div className="um-modal-scrim" onClick={onClose}>
-      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480, maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "16px 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: "0 0 auto" }}>
-          <div style={{ fontWeight: 800, fontSize: 18, fontFamily: "var(--font-serif)" }}>{isNew ? "Nuevo fijo" : "Editar fijo"}</div>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
-            <Icon name="X" size={22} stroke={2.2} color="var(--text-2)" />
-          </button>
-        </div>
+    <Sheet label={isNew ? "Nuevo fijo" : "Editar fijo"} onClose={onClose} maxWidth={480} style={{ maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <SheetHeader title={isNew ? "Nuevo fijo" : "Editar fijo"} onClose={onClose} />
 
         <div
           className="app-scroll"
@@ -286,22 +281,31 @@ export function SubEditor({
           )}
 
           {error && (
-            <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--red-600)", lineHeight: 1.4 }}>
+            <div role="alert" style={{ fontSize: 12.5, fontWeight: 700, color: "var(--expense)", lineHeight: 1.4 }}>
               {error}
             </div>
           )}
 
+          {confirmDelete ? (
+            <ConfirmRow
+              question={`¿Eliminar este fijo?`}
+              detail="Los movimientos ya registrados se conservan."
+              busy={busy}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={remove}
+            />
+          ) : (
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             {existing && (
               <>
                 <button
-                  onClick={remove}
+                  onClick={() => setConfirmDelete(true)}
                   disabled={busy}
                   className="icon-btn"
-                  style={{ width: 48, height: 48, borderRadius: 12, background: "var(--red-soft)", flex: "0 0 auto" }}
+                  style={{ width: 48, height: 48, borderRadius: 12, background: "var(--expense-soft)", flex: "0 0 auto" }}
                   aria-label="Eliminar"
                 >
-                  <Icon name="Trash2" size={20} stroke={2} color="var(--red-600)" />
+                  <Icon name="Trash2" size={20} stroke={2} color="var(--expense)" />
                 </button>
                 <button
                   onClick={togglePause}
@@ -318,13 +322,13 @@ export function SubEditor({
             <button
               onClick={save}
               disabled={busy}
-              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit", background: "var(--green)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15, opacity: busy ? 0.7 : 1 }}
+              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: busy ? "not-allowed" : "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15, opacity: busy ? 0.7 : 1 }}
             >
               {isNew ? "Crear fijo" : "Guardar cambios"}
             </button>
           </div>
+          )}
         </div>
-      </div>
-    </div>
+    </Sheet>
   );
 }

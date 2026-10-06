@@ -4,7 +4,8 @@ import { useState } from "react";
 import { useStore, type TxType } from "./store";
 import { Icon, CatBubble } from "./Icon";
 import { PeriodPills, Segmented } from "./ui";
-import { RangeModal } from "./modal-range";
+import { RangePicker } from "./modal-range";
+import { Sheet, SheetHeader } from "./Sheet";
 import { EMPTY_TX_FILTER, type TxFilter } from "@/lib/tx-filter";
 
 const TYPE_OPTIONS: { value: "all" | TxType; label: string }[] = [
@@ -37,17 +38,18 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
     onClose();
   }
 
-  return (
-    <>
-      <div className="um-modal-scrim" onClick={onClose}>
-        <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "16px 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: "0 0 auto" }}>
-          <div style={{ fontWeight: 800, fontSize: 18, fontFamily: "var(--font-serif)" }}>Filtros</div>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
-            <Icon name="X" size={22} stroke={2.2} color="var(--text-2)" />
-          </button>
-        </div>
+  if (rangeOpen) {
+    return (
+      <Sheet label="Rango personalizado" onClose={onClose} style={{ maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        <SheetHeader title="Rango personalizado" onClose={onClose} onBack={() => setRangeOpen(false)} backLabel="Volver a Filtros" />
+        <RangePicker onDone={() => setRangeOpen(false)} />
+      </Sheet>
+    );
+  }
 
+  return (
+    <Sheet label="Filtros" onClose={onClose} style={{ maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <SheetHeader title="Filtros" onClose={onClose} />
         <div
           className="app-scroll"
           style={{
@@ -63,15 +65,15 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
           }}
         >
           <div>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: 10 }}>
               Período
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
-              <PeriodPills size="sm" />
+              <PeriodPills />
               <button
                 type="button"
                 onClick={() => setRangeOpen(true)}
-                style={{ border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--text-3)", fontSize: 12.5, fontWeight: 700, padding: "2px 2px" }}
+                style={{ border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--accent-ink)", fontSize: 13, fontWeight: 800, padding: "12px 8px", minHeight: 44, textAlign: "left" }}
               >
                 Rango personalizado… ({rangeLabel})
               </button>
@@ -79,7 +81,7 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
           </div>
 
           <div>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10 }}>
+            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-2)", marginBottom: 10 }}>
               Tipo
             </div>
             <Segmented
@@ -97,14 +99,14 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
 
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)" }}>
+              <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-2)" }}>
                 Categorías
               </div>
               {draft.cats.length > 0 && (
                 <button
                   type="button"
                   onClick={() => setDraft((d) => ({ ...d, cats: [] }))}
-                  style={{ border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--green-700)", fontSize: 12.5, fontWeight: 800 }}
+                  style={{ border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--accent-ink)", fontSize: 13, fontWeight: 800, padding: "12px 8px", minHeight: 44 }}
                 >
                   Limpiar selección
                 </button>
@@ -138,7 +140,7 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
                   >
                     {on && (
                       <div style={{ position: "absolute", top: 6, right: 6, width: 18, height: 18, borderRadius: "50%", background: c.color, display: "grid", placeItems: "center" }}>
-                        <Icon name="Check" size={12} stroke={3} color="#fff" />
+                        <Icon name="Check" size={12} stroke={3} color="var(--surface)" />
                       </div>
                     )}
                     <CatBubble icon={c.icon} color={c.color} size={44} stroke={2} />
@@ -158,15 +160,12 @@ export function FiltrosModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               onClick={apply}
-              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--green)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
+              style={{ flex: 1, padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
             >
               Aplicar
             </button>
           </div>
         </div>
-      </div>
-    </div>
-    {rangeOpen && <RangeModal onClose={() => setRangeOpen(false)} />}
-    </>
+    </Sheet>
   );
 }

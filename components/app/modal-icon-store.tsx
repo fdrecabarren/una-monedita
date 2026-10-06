@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { Icon } from "./Icon";
+import { Sheet, SheetHeader } from "./Sheet";
 import { GROUPS, COLORS, ALL } from "@/lib/icon-catalog";
 
 export function IconStoreModal({
@@ -30,28 +31,19 @@ export function IconStoreModal({
   if (!open) return null;
 
   return (
-    <div className="um-modal-scrim" style={{ zIndex: 70 }} onClick={onClose}>
-      <div
-        className="um-sheet"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 480, display: "flex", flexDirection: "column", maxHeight: "92dvh" }}
-      >
-        <div style={{ padding: "14px 18px 8px", display: "flex", alignItems: "center", gap: 12, flex: "0 0 auto" }}>
-          <div style={{ fontWeight: 800, fontSize: 17, fontFamily: "var(--font-serif)", flex: 1 }}>Tienda de iconos</div>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
-            <Icon name="X" size={22} stroke={2.2} color="var(--text-2)" />
-          </button>
-        </div>
+    <Sheet label="Tienda de iconos" onClose={onClose} maxWidth={480} style={{ display: "flex", flexDirection: "column", maxHeight: "92dvh" }}>
+        <SheetHeader title="Tienda de iconos" onClose={onClose} />
 
         {/* search */}
         <div style={{ padding: "0 18px 10px", flex: "0 0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 12, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
+          <div className="field-wrap" style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 12, background: "var(--bg-2)", border: "1px solid var(--line)" }}>
             <Icon name="Search" size={17} stroke={2} color="var(--text-3)" />
             <input
+              aria-label="Buscar icono"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder="Buscar icono…"
-              style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", outline: "none", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }}
+              style={{ flex: 1, minWidth: 0, border: "none", background: "transparent", fontFamily: "inherit", fontSize: 16, fontWeight: 600, color: "var(--text)" }}
             />
           </div>
         </div>
@@ -97,7 +89,7 @@ export function IconStoreModal({
                     fontSize: 12.5,
                     whiteSpace: "nowrap",
                     color: on ? "var(--on-accent)" : "var(--text-2)",
-                    background: on ? "var(--green)" : "var(--bg-2)",
+                    background: on ? "var(--accent)" : "var(--bg-2)",
                   }}
                 >
                   {g.name}
@@ -138,7 +130,6 @@ export function IconStoreModal({
             <div style={{ textAlign: "center", color: "var(--text-3)", fontSize: 14, padding: "24px 0" }}>Sin resultados</div>
           )}
         </div>
-      </div>
-    </div>
+    </Sheet>
   );
 }

@@ -11,8 +11,8 @@ const NOTION_INTEGRATIONS_URL = "https://www.notion.so/my-integrations";
 const STEPS: { n: number; title: string; body: string }[] = [
   {
     n: 1,
-    title: "Duplica la plantilla",
-    body: 'Abre la plantilla con el botón de arriba y pulsa "Duplicar" (arriba a la derecha en Notion). Se copiará "UNA MONEDITA" a tu propia cuenta.',
+    title: "Duplicá la plantilla",
+    body: 'Abrí la plantilla con el botón de arriba y tocá "Duplicar" (arriba a la derecha en Notion). Se copiará "UNA MONEDITA" a tu propia cuenta.',
   },
   {
     n: 2,
@@ -58,7 +58,7 @@ export default function SetupPage() {
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "No se pudo conectar. Revisa los datos e intenta de nuevo.");
+        setError(data.error ?? "No se pudo conectar. Revisá los datos y probá de nuevo.");
       }
     } catch {
       setError("Error de conexión.");
@@ -86,7 +86,6 @@ export default function SetupPage() {
     fontSize: 16,
     fontFamily: "inherit",
     fontWeight: 600,
-    outline: "none",
   };
 
   return (
@@ -98,8 +97,8 @@ export default function SetupPage() {
     >
       <div style={{ width: "100%", maxWidth: 460, padding: "32px 0 48px" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ display: "inline-flex", width: 52, height: 52, borderRadius: 15, background: "var(--green)", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "var(--shadow-fab)" }}>
-            <CircleDollarSign size={28} strokeWidth={2.4} color="#fff" />
+          <div style={{ display: "inline-flex", width: 52, height: 52, borderRadius: 15, background: "var(--accent)", alignItems: "center", justifyContent: "center", marginBottom: 16, boxShadow: "var(--shadow-fab)" }}>
+            <CircleDollarSign size={28} strokeWidth={2.4} color="var(--on-accent)" />
           </div>
           <h1 className="num" style={{ fontSize: 26, fontWeight: 600, color: "var(--text)", marginBottom: 4 }}>Conecta tu Notion</h1>
           <p style={{ fontSize: 14, color: "var(--text-3)", fontWeight: 600, lineHeight: 1.45 }}>
@@ -113,7 +112,7 @@ export default function SetupPage() {
             href={NOTION_TEMPLATE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px", borderRadius: 12, border: "none", background: "var(--green)", color: "#fff", fontWeight: 800, fontSize: 14.5, textDecoration: "none", fontFamily: "inherit", boxShadow: "var(--shadow-fab)" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "13px", borderRadius: 12, border: "none", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 14.5, textDecoration: "none", fontFamily: "inherit", boxShadow: "var(--shadow-fab)" }}
           >
             <ExternalLink size={17} strokeWidth={2.4} />
             Abrir plantilla y duplicar
@@ -122,7 +121,7 @@ export default function SetupPage() {
             href={NOTION_INTEGRATIONS_URL}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
           >
             <ExternalLink size={16} strokeWidth={2.2} />
             Crear integración de Notion
@@ -133,7 +132,7 @@ export default function SetupPage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 28 }}>
           {STEPS.map((s) => (
             <div key={s.n} style={{ display: "flex", gap: 12 }}>
-              <div style={{ flex: "0 0 auto", width: 26, height: 26, borderRadius: 999, background: "var(--green-soft)", color: "var(--green-700)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 13 }}>
+              <div style={{ flex: "0 0 auto", width: 26, height: 26, borderRadius: 999, background: "var(--accent-soft)", color: "var(--accent-ink)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 13 }}>
                 {s.n}
               </div>
               <div style={{ minWidth: 0 }}>
@@ -172,13 +171,13 @@ export default function SetupPage() {
           </div>
 
           {error && (
-            <p style={{ fontSize: 13.5, color: "var(--red-600)", background: "var(--red-soft)", borderRadius: 10, padding: "10px 12px", fontWeight: 600, lineHeight: 1.4 }}>{error}</p>
+            <p style={{ fontSize: 13.5, color: "var(--expense)", background: "var(--expense-soft)", borderRadius: 10, padding: "10px 12px", fontWeight: 600, lineHeight: 1.4 }}>{error}</p>
           )}
 
           <button
             type="submit"
             disabled={loading || !token || !pageUrl}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "14px", borderRadius: 12, border: "none", background: loading || !token || !pageUrl ? "var(--bg-2)" : "var(--green)", color: loading || !token || !pageUrl ? "var(--text-3)" : "#fff", fontWeight: 800, fontSize: 15, cursor: loading || !token || !pageUrl ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "14px", borderRadius: 12, border: "none", background: loading || !token || !pageUrl ? "var(--bg-2)" : "var(--accent)", color: loading || !token || !pageUrl ? "var(--text-3)" : "var(--on-accent)", fontWeight: 800, fontSize: 15, cursor: loading || !token || !pageUrl ? "not-allowed" : "pointer", fontFamily: "inherit" }}
           >
             <Plug size={18} strokeWidth={2.4} />
             {loading ? "Conectando…" : "Conectar"}

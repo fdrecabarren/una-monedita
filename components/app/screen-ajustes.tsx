@@ -1,8 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useStore, type DashStyle, type Accent, type AppCurrency } from "./store";
+import { useStore, failureText, type DashStyle, type Accent, type AppCurrency } from "./store";
 import { Icon } from "./Icon";
+import { SegmentedControl } from "./ui";
+import { fmt, parseAmount } from "@/lib/format";
+import { addDays, startOfDay } from "@/lib/date-range";
 
 const NOTION_TEMPLATE_URL =
   "https://app.notion.com/p/UNA-MONEDITA-copy-3795c48e39b6803da9abf7ab40919b39?source=copy_link";
@@ -24,10 +27,10 @@ function NotionSection() {
       : status.via === "env"
         ? "Conectado (servidor)"
         : "No configurado";
-  const statusColor = status?.configured ? "var(--green-700)" : "var(--text-3)";
+  const statusColor = status?.configured ? "var(--accent-ink)" : "var(--text-3)";
 
   return (
-    <Row label="Notion" hint="Tu base de datos personal. Duplica la plantilla y conecta tu cuenta.">
+    <Row label="Notion" hint="Tu base de datos personal. Duplicá la plantilla y conectá tu cuenta.">
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor }} />
@@ -38,7 +41,7 @@ function NotionSection() {
           href={NOTION_TEMPLATE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, textDecoration: "none", fontFamily: "inherit" }}
         >
           <Icon name="Globe" size={16} stroke={2.2} />
           Abrir plantilla de Notion
@@ -48,9 +51,9 @@ function NotionSection() {
           onClick={() => {
             window.location.href = "/setup";
           }}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1.5px solid var(--green)", background: "var(--green-soft)", color: "var(--green-700)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
         >
-          <Icon name="Plug" size={16} stroke={2.2} color="var(--green-700)" />
+          <Icon name="Plug" size={16} stroke={2.2} color="var(--accent-ink)" />
           {status?.via === "jwt" ? "Reconfigurar Notion" : "Conectar Notion"}
         </button>
       </div>
@@ -129,33 +132,33 @@ function MantenimientoSection() {
         <button
           onClick={runMigrate}
           disabled={migrateState.kind === "busy"}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, cursor: migrateState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, cursor: migrateState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
         >
           <Icon name="Database" size={16} stroke={2.2} />
           {migrateState.kind === "busy" ? "Preparando..." : "Preparar Notion"}
         </button>
         {migrateState.kind === "ok" && (
-          <div style={{ fontSize: 12, color: "var(--green-700)", fontWeight: 700 }}>{migrateState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--accent-ink)", fontWeight: 700 }}>{migrateState.message}</div>
         )}
         {migrateState.kind === "error" && (
-          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700 }}>{migrateState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--expense)", fontWeight: 700 }}>{migrateState.message}</div>
         )}
 
         <button
           onClick={runPublishGuide}
           disabled={guideState.kind === "busy"}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text-1)", fontWeight: 700, fontSize: 13.5, cursor: guideState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--text)", fontWeight: 700, fontSize: 13.5, cursor: guideState.kind === "busy" ? "not-allowed" : "pointer", fontFamily: "inherit" }}
         >
           <Icon name="BookOpen" size={16} stroke={2.2} />
           {guideState.kind === "busy" ? "Publicando..." : "Publicar guía para agentes"}
         </button>
         {guideState.kind === "ok" && (
-          <a href={guideState.message} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--green-700)", fontWeight: 700, wordBreak: "break-all" }}>
+          <a href={guideState.message} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "var(--accent-ink)", fontWeight: 700, wordBreak: "break-all" }}>
             {guideState.message}
           </a>
         )}
         {guideState.kind === "error" && (
-          <div style={{ fontSize: 12, color: "var(--red-600)", fontWeight: 700, wordBreak: "break-word", lineHeight: 1.4 }}>{guideState.message}</div>
+          <div style={{ fontSize: 12, color: "var(--expense)", fontWeight: 700, wordBreak: "break-word", lineHeight: 1.4 }}>{guideState.message}</div>
         )}
 
         <button
@@ -189,34 +192,160 @@ function MantenimientoSection() {
 function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)" }}>{label}</div>
+      <div className="eyebrow">{label}</div>
       {children}
-      {hint && <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.4 }}>{hint}</div>}
+      {hint && <div className="caption" style={{ color: "var(--text-3)" }}>{hint}</div>}
     </div>
   );
 }
 
-function Pills<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+function Pills<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  return <SegmentedControl<T> label={label} options={options} value={value} onChange={onChange} stretch />;
+}
+
+// Saldo: interruptor del acumulado + saldo inicial (Notion · Accounts.InitialBalance).
+function SaldoSection() {
+  const { carryOver, setCarryOver, initialBalance, initialBalanceError, retryHistory, setInitialBalance, balanceBefore, currency } = useStore();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [todayAmount, setTodayAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const shown = draft ?? (initialBalance === null ? "" : String(initialBalance));
+  const dirty = draft !== null && parseAmount(draft) !== initialBalance;
+  // saldo contando todo lo registrado hasta hoy (null si el historial no está listo)
+  const closingToday = balanceBefore(startOfDay(addDays(new Date(), 1)));
+  const canCalc = closingToday !== null && initialBalance !== null;
+
+  async function save() {
+    const n = parseAmount(shown);
+    if (n === null) {
+      setMsg({ ok: false, text: "Ingresá un número." });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      await setInitialBalance(Math.round(n * 100) / 100);
+      setDraft(null);
+      setMsg({ ok: true, text: "Saldo inicial guardado." });
+    } catch (err) {
+      setMsg({ ok: false, text: failureText(err, "No se pudo guardar el saldo inicial") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function applyToday() {
+    const hoy = parseAmount(todayAmount);
+    if (hoy === null || closingToday === null || initialBalance === null) {
+      setMsg({ ok: false, text: "Ingresá cuánta plata tenés hoy." });
+      return;
+    }
+    // disponible hoy = saldo inicial + movimientos hasta hoy  →  inicial = hoy − movimientos
+    const initial = Math.round((hoy - (closingToday - initialBalance)) * 100) / 100;
+    setDraft(String(initial));
+    setCalcOpen(false);
+    setTodayAmount("");
+    setMsg({ ok: true, text: `Saldo inicial calculado: ${fmt(initial, currency)}. Tocá Guardar para confirmarlo.` });
+  }
+
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      {options.map((o) => {
-        const on = o.value === value;
-        return (
+    <Row
+      label="Saldo"
+      hint="Acumulado: cada período arranca con lo que te quedó del anterior, así ves cuánta plata tenés. Solo del período: se reinicia en cada período."
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Pills
+          label="Saldo"
+          value={carryOver ? "on" : "off"}
+          onChange={(v) => setCarryOver(v === "on")}
+          options={[{ value: "off", label: "Solo del período" }, { value: "on", label: "Acumulado" }]}
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor="saldo-inicial" style={{ fontWeight: 800, fontSize: 14 }}>Saldo inicial</label>
+          <div className="caption" style={{ color: "var(--text-3)" }}>¿Con cuánta plata arrancaste? Es lo que tenías antes de registrar tu primer movimiento.</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              id="saldo-inicial"
+              inputMode="decimal"
+              value={shown}
+              disabled={initialBalance === null}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setMsg(null);
+              }}
+              placeholder={initialBalance === null ? (initialBalanceError ? "No disponible" : "Cargando…") : "Ej: 150000"}
+              style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
+            />
+            <button
+              onClick={save}
+              disabled={busy || !dirty}
+              style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "none", background: dirty ? "var(--accent)" : "var(--bg-2)", color: dirty ? "var(--on-accent)" : "var(--text-3)", fontWeight: 800, fontSize: 14.5, cursor: busy || !dirty ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {busy ? "Guardando…" : "Guardar"}
+            </button>
+          </div>
+          {msg && (
+            <div role={msg.ok ? "status" : "alert"} style={{ fontSize: 13, fontWeight: 700, color: msg.ok ? "var(--income)" : "var(--expense)", lineHeight: 1.4 }}>
+              {msg.text}
+            </div>
+          )}
+          {initialBalanceError && (
+            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "var(--expense)", lineHeight: 1.4 }}>
+              No se pudo leer el saldo inicial de Notion.
+              <button
+                onClick={retryHistory}
+                style={{ minHeight: 44, padding: "0 6px", border: "none", background: "transparent", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Reintentar
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div>
           <button
-            key={o.value}
-            onClick={() => onChange(o.value)}
-            style={{ padding: "9px 16px", borderRadius: 999, border: on ? "1.5px solid var(--green)" : "1.5px solid var(--line)", background: on ? "var(--green-soft)" : "var(--surface)", color: on ? "var(--green-700)" : "var(--text-2)", fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+            onClick={() => setCalcOpen((o) => !o)}
+            disabled={!canCalc}
+            aria-expanded={calcOpen}
+            style={{ minHeight: 44, border: "none", background: "transparent", cursor: canCalc ? "pointer" : "not-allowed", fontFamily: "inherit", color: canCalc ? "var(--accent-ink)" : "var(--text-3)", fontWeight: 800, fontSize: 13.5, padding: "0 2px", textAlign: "left" }}
           >
-            {o.label}
+            Calcularlo desde lo que tengo hoy
           </button>
-        );
-      })}
-    </div>
+          {!canCalc && (
+            <div className="caption" style={{ color: "var(--text-3)" }}>
+              {carryOver ? "Disponible cuando termine de cargar el historial." : "Activá el saldo acumulado para usarlo."}
+            </div>
+          )}
+          {calcOpen && canCalc && (
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <input
+                aria-label="Plata que tenés hoy"
+                inputMode="decimal"
+                value={todayAmount}
+                onChange={(e) => setTodayAmount(e.target.value)}
+                placeholder="¿Cuánta plata tenés hoy?"
+                style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
+              />
+              <button
+                onClick={applyToday}
+                style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Calcular
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </Row>
   );
 }
 
 export function Ajustes() {
-  const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency } = useStore();
+  const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency, setScreen } = useStore();
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function logout() {
@@ -231,20 +360,31 @@ export function Ajustes() {
   return (
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 18px 28px" }}>
       <div style={{ maxWidth: 560, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <button
+          onClick={() => setScreen("categorias")}
+          style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", minHeight: 52, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", fontFamily: "inherit", textAlign: "left", color: "var(--text)" }}
+        >
+          <Icon name="Tags" size={20} stroke={2} color="var(--text-2)" />
+          <span style={{ flex: 1, fontWeight: 800, fontSize: 15 }}>Categorías y presupuestos</span>
+          <Icon name="ChevronRight" size={20} stroke={2.2} color="var(--text-3)" />
+        </button>
+
         <Row label="Moneda" hint="Usada al registrar nuevos movimientos">
-          <Pills value={currency} onChange={(v) => setCurrency(v as AppCurrency)} options={[{ value: "EUR", label: "€ Euro" }, { value: "ARS", label: "$ Peso" }, { value: "USD", label: "US$ Dólar" }]} />
+          <Pills label="Moneda" value={currency} onChange={(v) => setCurrency(v as AppCurrency)} options={[{ value: "EUR", label: "€ Euro" }, { value: "ARS", label: "$ Peso" }, { value: "USD", label: "US$ Dólar" }]} />
         </Row>
 
+        <SaldoSection />
+
         <Row label="Tema">
-          <Pills value={theme} onChange={setTheme} options={[{ value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]} />
+          <Pills label="Tema" value={theme} onChange={setTheme} options={[{ value: "system", label: "Automático" }, { value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]} />
         </Row>
 
         <Row label="Acento">
-          <Pills value={accent} onChange={(v) => setAccent(v as Accent)} options={[{ value: "verde", label: "Verde" }, { value: "teal", label: "Teal" }, { value: "bosque", label: "Bosque" }]} />
+          <Pills label="Acento" value={accent} onChange={(v) => setAccent(v as Accent)} options={[{ value: "verde", label: "Verde" }, { value: "teal", label: "Turquesa" }, { value: "bosque", label: "Bosque" }]} />
         </Row>
 
-        <Row label="Estilo del resumen" hint="A · anillo de iconos · B · leyenda · C · grilla compacta (móvil)">
-          <Pills value={dashStyle} onChange={(v) => setDashStyle(v as DashStyle)} options={[{ value: "A", label: "A · Anillo" }, { value: "B", label: "B · Leyenda" }, { value: "C", label: "C · Grilla" }]} />
+        <Row label="Estilo del resumen" hint="Cómo se ve el Resumen en el celular.">
+          <Pills label="Estilo del resumen" value={dashStyle} onChange={(v) => setDashStyle(v as DashStyle)} options={[{ value: "A", label: "Anillo" }, { value: "B", label: "Leyenda" }, { value: "C", label: "Grilla" }]} />
         </Row>
 
         <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
@@ -260,9 +400,9 @@ export function Ajustes() {
         <button
           onClick={logout}
           disabled={loggingOut}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: "13px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--red-600)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: "13px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--expense)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
         >
-          <Icon name="LogOut" size={18} stroke={2.2} color="var(--red-600)" />
+          <Icon name="LogOut" size={18} stroke={2.2} color="var(--expense)" />
           Cerrar sesión
         </button>
       </div>
