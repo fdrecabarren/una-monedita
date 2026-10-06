@@ -281,7 +281,7 @@ export function DashboardMobile() {
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "6px 18px 10px", display: "flex", flexDirection: "column", gap: 10, flex: "0 0 auto" }}>
         <div style={{ display: "flex", justifyContent: "center" }}><PeriodPills /></div>
-        <div style={{ display: "flex", justifyContent: "center" }}><FocusToggle size="sm" /></div>
+        <div style={{ display: "flex", justifyContent: "center" }}><FocusToggle /></div>
         <RangeNav />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>{body}</div>

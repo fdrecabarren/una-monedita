@@ -11,8 +11,8 @@ const NOTION_INTEGRATIONS_URL = "https://www.notion.so/my-integrations";
 const STEPS: { n: number; title: string; body: string }[] = [
   {
     n: 1,
-    title: "Duplica la plantilla",
-    body: 'Abre la plantilla con el botón de arriba y pulsa "Duplicar" (arriba a la derecha en Notion). Se copiará "UNA MONEDITA" a tu propia cuenta.',
+    title: "Duplicá la plantilla",
+    body: 'Abrí la plantilla con el botón de arriba y tocá "Duplicar" (arriba a la derecha en Notion). Se copiará "UNA MONEDITA" a tu propia cuenta.',
   },
   {
     n: 2,
@@ -58,7 +58,7 @@ export default function SetupPage() {
         router.refresh();
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error ?? "No se pudo conectar. Revisa los datos e intenta de nuevo.");
+        setError(data.error ?? "No se pudo conectar. Revisá los datos y probá de nuevo.");
       }
     } catch {
       setError("Error de conexión.");

@@ -193,19 +193,27 @@ export interface Bucket {
   end: Date;
 }
 
-// Agrupa el rango en baldes para el mini-gráfico de tendencia: por día si el
-// rango es corto, por semana si es mediano, por mes si es largo.
-export function bucketsFor(range: DateRange): Bucket[] {
+export type BucketUnit = "day" | "week" | "month";
+
+// Unidad por defecto según el largo del rango: día si es corto, semana si es
+// mediano, mes si es largo.
+export function defaultBucketUnit(range: DateRange): BucketUnit {
   const len = daysBetween(range.start, range.end);
+  return len <= 31 ? "day" : len <= 186 ? "week" : "month";
+}
+
+// Agrupa el rango en baldes para el mini-gráfico de tendencia y el desglose de
+// balance. `unit` fuerza la unidad (p. ej. "Por semana" dentro de un mes).
+export function bucketsFor(range: DateRange, unit: BucketUnit = defaultBucketUnit(range)): Bucket[] {
   const out: Bucket[] = [];
 
-  if (len <= 31) {
+  if (unit === "day") {
     let cur = startOfDay(range.start);
     while (cur <= range.end) {
       out.push({ key: toISO(cur), label: String(cur.getDate()), start: startOfDay(cur), end: endOfDay(cur) });
       cur = addDays(cur, 1);
     }
-  } else if (len <= 186) {
+  } else if (unit === "week") {
     let cur = startOfWeek(range.start);
     while (cur <= range.end) {
       const wEnd = endOfDay(addDays(cur, 6));
@@ -231,4 +239,25 @@ export function bucketsFor(range: DateRange): Bucket[] {
     }
   }
   return out;
+}
+
+// Nombre del balance (ingresos − gastos) según el período elegido.
+export function balanceLabel(period: Period, range: DateRange, now: Date = new Date()): string {
+  switch (period) {
+    case "Día":
+      return sameDay(range.start, now) ? "Balance de hoy" : "Balance diario";
+    case "Semana":
+      return "Balance semanal";
+    case "Mes":
+      return "Balance mensual";
+    case "Año":
+      return "Balance anual";
+    case "Personalizado":
+      return "Balance del período";
+  }
+}
+
+// "30 sep" / "30 sep 2025": fecha corta para rótulos de saldo.
+export function shortDateLabel(d: Date, now: Date = new Date()): string {
+  return shortDate(d, d.getFullYear() !== now.getFullYear());
 }

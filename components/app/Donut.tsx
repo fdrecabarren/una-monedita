@@ -16,6 +16,7 @@ export function Donut({
   children,
   onSegment,
   activeCat,
+  label,
 }: {
   segments: Segment[];
   size?: number;
@@ -24,6 +25,7 @@ export function Donut({
   children?: ReactNode;
   onSegment?: (cat: string) => void;
   activeCat?: string | null;
+  label?: string;
 }) {
   const r = (size - thickness) / 2;
   const cx = size / 2;
@@ -63,6 +65,8 @@ export function Donut({
       style={{ position: "relative", width: size, height: size, flex: "0 0 auto" }}
     >
       <svg
+        role="img"
+        aria-label={label ?? "Gráfico por categoría"}
         width={size}
         height={size}
         style={{ transform: "rotate(-90deg)", display: "block" }}

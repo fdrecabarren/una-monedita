@@ -17,7 +17,7 @@ import {
   // finanzas
   Wallet, Banknote, CreditCard, PiggyBank, Landmark, Receipt, Coins, TrendingUp,
   TrendingDown, Briefcase, Calculator, ChartPie, ChartColumn, HandCoins, DollarSign,
-  BadgePercent, Vault,
+  BadgePercent, Vault, CircleAlert, CircleCheck, TriangleAlert,
   // salud
   HeartPulse, Pill, Stethoscope, Cross, Dumbbell, Activity, Brain, Bandage, Syringe,
   Eye, Smile, Bone, Flame,
@@ -59,7 +59,7 @@ export const ICONS: Record<string, LucideIcon> = {
   WashingMachine, Refrigerator, DoorOpen, Armchair, Bath, CookingPot, Flower2, TreePine,
   Wallet, Banknote, CreditCard, PiggyBank, Landmark, Receipt, Coins, TrendingUp,
   TrendingDown, Briefcase, Calculator, ChartPie, ChartColumn, HandCoins, DollarSign,
-  BadgePercent, Vault,
+  BadgePercent, Vault, CircleAlert, CircleCheck, TriangleAlert,
   HeartPulse, Pill, Stethoscope, Cross, Dumbbell, Activity, Brain, Bandage, Syringe,
   Eye, Smile, Bone, Flame,
   Gamepad2, Music, Film, Clapperboard, Tv, Ticket, Popcorn, Headphones, PartyPopper,

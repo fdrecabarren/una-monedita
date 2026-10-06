@@ -25,7 +25,7 @@ export function fmt(n: number, currency?: CurrencyCode, opts?: { sign?: boolean 
     minimumFractionDigits: minDecimals,
     maximumFractionDigits: maxDecimals,
   });
-  return (sign ? sign + " " : "") + symbol + " " + s;
+  return (sign ? sign + "\u00a0" : "") + symbol + "\u00a0" + s;
 }
 
 // "2026-09-10" → "10 sep". Fecha construida con el constructor local (no
@@ -39,7 +39,7 @@ export function fmtShort(n: number, currency?: CurrencyCode): string {
   const { symbol } = currencyMeta(currency);
   const abs = Math.abs(n);
   if (abs >= 1_000_000)
-    return symbol + " " + (n / 1_000_000).toFixed(abs % 1_000_000 === 0 ? 0 : 1).replace(".", ",") + "M";
-  if (abs >= 1000) return symbol + " " + Math.round(n / 1000) + "k";
-  return symbol + " " + Math.round(n);
+    return symbol + "\u00a0" + (n / 1_000_000).toFixed(abs % 1_000_000 === 0 ? 0 : 1).replace(".", ",") + "M";
+  if (abs >= 1000) return symbol + "\u00a0" + Math.round(n / 1000) + "k";
+  return symbol + "\u00a0" + Math.round(n);
 }

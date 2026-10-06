@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useStore, type DashStyle, type Accent, type AppCurrency } from "./store";
 import { Icon } from "./Icon";
+import { SegmentedControl } from "./ui";
 
 const NOTION_TEMPLATE_URL =
   "https://app.notion.com/p/UNA-MONEDITA-copy-3795c48e39b6803da9abf7ab40919b39?source=copy_link";
@@ -27,7 +28,7 @@ function NotionSection() {
   const statusColor = status?.configured ? "var(--accent-ink)" : "var(--text-3)";
 
   return (
-    <Row label="Notion" hint="Tu base de datos personal. Duplica la plantilla y conecta tu cuenta.">
+    <Row label="Notion" hint="Tu base de datos personal. Duplicá la plantilla y conectá tu cuenta.">
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ width: 8, height: 8, borderRadius: 999, background: statusColor }} />
@@ -189,34 +190,19 @@ function MantenimientoSection() {
 function Row({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)" }}>{label}</div>
+      <div className="eyebrow">{label}</div>
       {children}
-      {hint && <div style={{ fontSize: 12, color: "var(--text-3)", lineHeight: 1.4 }}>{hint}</div>}
+      {hint && <div className="caption" style={{ color: "var(--text-3)" }}>{hint}</div>}
     </div>
   );
 }
 
-function Pills<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
-  return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      {options.map((o) => {
-        const on = o.value === value;
-        return (
-          <button
-            key={o.value}
-            onClick={() => onChange(o.value)}
-            style={{ padding: "9px 16px", borderRadius: 999, border: on ? "1.5px solid var(--accent)" : "1.5px solid var(--line)", background: on ? "var(--accent-soft)" : "var(--surface)", color: on ? "var(--accent-ink)" : "var(--text-2)", fontWeight: 700, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
+function Pills<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
+  return <SegmentedControl<T> label={label} options={options} value={value} onChange={onChange} stretch />;
 }
 
 export function Ajustes() {
-  const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency } = useStore();
+  const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency, setScreen } = useStore();
   const [loggingOut, setLoggingOut] = useState(false);
 
   async function logout() {
@@ -231,20 +217,29 @@ export function Ajustes() {
   return (
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 18px 28px" }}>
       <div style={{ maxWidth: 560, margin: "0 auto", display: "flex", flexDirection: "column", gap: 24 }}>
+        <button
+          onClick={() => setScreen("categorias")}
+          style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", minHeight: 52, borderRadius: 14, border: "1px solid var(--line)", background: "var(--surface)", cursor: "pointer", fontFamily: "inherit", textAlign: "left", color: "var(--text)" }}
+        >
+          <Icon name="Tags" size={20} stroke={2} color="var(--text-2)" />
+          <span style={{ flex: 1, fontWeight: 800, fontSize: 15 }}>Categorías y presupuestos</span>
+          <Icon name="ChevronRight" size={20} stroke={2.2} color="var(--text-3)" />
+        </button>
+
         <Row label="Moneda" hint="Usada al registrar nuevos movimientos">
-          <Pills value={currency} onChange={(v) => setCurrency(v as AppCurrency)} options={[{ value: "EUR", label: "€ Euro" }, { value: "ARS", label: "$ Peso" }, { value: "USD", label: "US$ Dólar" }]} />
+          <Pills label="Moneda" value={currency} onChange={(v) => setCurrency(v as AppCurrency)} options={[{ value: "EUR", label: "€ Euro" }, { value: "ARS", label: "$ Peso" }, { value: "USD", label: "US$ Dólar" }]} />
         </Row>
 
         <Row label="Tema">
-          <Pills value={theme} onChange={setTheme} options={[{ value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]} />
+          <Pills label="Tema" value={theme} onChange={setTheme} options={[{ value: "system", label: "Automático" }, { value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]} />
         </Row>
 
         <Row label="Acento">
-          <Pills value={accent} onChange={(v) => setAccent(v as Accent)} options={[{ value: "verde", label: "Verde" }, { value: "teal", label: "Teal" }, { value: "bosque", label: "Bosque" }]} />
+          <Pills label="Acento" value={accent} onChange={(v) => setAccent(v as Accent)} options={[{ value: "verde", label: "Verde" }, { value: "teal", label: "Turquesa" }, { value: "bosque", label: "Bosque" }]} />
         </Row>
 
-        <Row label="Estilo del resumen" hint="A · anillo de iconos · B · leyenda · C · grilla compacta (móvil)">
-          <Pills value={dashStyle} onChange={(v) => setDashStyle(v as DashStyle)} options={[{ value: "A", label: "A · Anillo" }, { value: "B", label: "B · Leyenda" }, { value: "C", label: "C · Grilla" }]} />
+        <Row label="Estilo del resumen" hint="Cómo se ve el Resumen en el celular.">
+          <Pills label="Estilo del resumen" value={dashStyle} onChange={(v) => setDashStyle(v as DashStyle)} options={[{ value: "A", label: "Anillo" }, { value: "B", label: "Leyenda" }, { value: "C", label: "Grilla" }]} />
         </Row>
 
         <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />

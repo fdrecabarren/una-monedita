@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties } from "react";
 import { useStore } from "./store";
-import { Icon } from "./Icon";
+import { Sheet, SheetHeader } from "./Sheet";
 import {
   type DateRange,
   rangeFor,
@@ -23,7 +23,6 @@ const inputStyle: CSSProperties = {
   fontSize: 16,
   fontWeight: 700,
   color: "var(--text)",
-  outline: "none",
 };
 
 function shortcuts(): { label: string; range: DateRange }[] {
@@ -43,92 +42,89 @@ function shortcuts(): { label: string; range: DateRange }[] {
   ];
 }
 
-export function RangeModal({ onClose }: { onClose: () => void }) {
+// Cuerpo del selector de rango (atajos + fechas). Se usa dentro de RangeModal y
+// como vista interna del sheet de Filtros (nunca dos sheets apilados).
+export function RangePicker({ onDone }: { onDone: () => void }) {
   const { range, setRange } = useStore();
   const [start, setStart] = useState(toISO(range.start));
   const [end, setEnd] = useState(toISO(range.end));
 
   function apply(r: DateRange) {
     setRange(r.start, r.end);
-    onClose();
+    onDone();
   }
 
   function applyCustom() {
     setRange(parseDate(start), parseDate(end));
-    onClose();
+    onDone();
   }
 
   return (
-    <div className="um-modal-scrim" onClick={onClose}>
-      <div className="um-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460, maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        <div style={{ padding: "16px 20px 8px", display: "flex", alignItems: "center", justifyContent: "space-between", flex: "0 0 auto" }}>
-          <div style={{ fontWeight: 800, fontSize: 18, fontFamily: "var(--font-serif)" }}>Elegir período</div>
-          <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
-            <Icon name="X" size={22} stroke={2.2} color="var(--text-2)" />
-          </button>
-        </div>
-
-        <div
-          className="app-scroll"
-          style={{
-            padding: "8px 20px calc(20px + env(safe-area-inset-bottom))",
-            display: "flex",
-            flexDirection: "column",
-            gap: 18,
-            flex: 1,
-            minHeight: 0,
-            overflowY: "auto",
-            overflowX: "hidden",
-            overscrollBehavior: "contain",
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10 }}>
-              Atajos
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {shortcuts().map((s) => (
-                <button
-                  key={s.label}
-                  type="button"
-                  onClick={() => apply(s.range)}
-                  style={{
-                    padding: "8px 14px",
-                    borderRadius: 999,
-                    border: "1.5px solid var(--line)",
-                    background: "var(--surface)",
-                    color: "var(--text-2)",
-                    fontWeight: 700,
-                    fontSize: 13,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                  }}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10 }}>
-              Rango personalizado
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <input type="date" value={start} onChange={(e) => setStart(e.target.value)} style={inputStyle} />
-              <span style={{ color: "var(--text-3)", fontWeight: 700 }}>–</span>
-              <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} style={inputStyle} />
-            </div>
-          </div>
-
-          <button
-            onClick={applyCustom}
-            style={{ padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
-          >
-            Aplicar
-          </button>
+    <div
+      className="app-scroll"
+      style={{
+        padding: "8px 20px calc(20px + env(safe-area-inset-bottom))",
+        display: "flex",
+        flexDirection: "column",
+        gap: 18,
+        flex: 1,
+        minHeight: 0,
+        overflowY: "auto",
+        overflowX: "hidden",
+        overscrollBehavior: "contain",
+      }}
+    >
+      <div>
+        <div className="eyebrow" style={{ marginBottom: 10 }}>Atajos</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {shortcuts().map((s) => (
+            <button
+              key={s.label}
+              type="button"
+              onClick={() => apply(s.range)}
+              style={{
+                padding: "10px 14px",
+                minHeight: 40,
+                borderRadius: 999,
+                border: "1.5px solid var(--line)",
+                background: "var(--surface)",
+                color: "var(--text-2)",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
         </div>
       </div>
+
+      <div>
+        <div className="eyebrow" style={{ marginBottom: 10 }}>Rango personalizado</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <input type="date" aria-label="Desde" value={start} onChange={(e) => setStart(e.target.value)} style={inputStyle} />
+          <span style={{ color: "var(--text-3)", fontWeight: 700 }} aria-hidden="true">–</span>
+          <input type="date" aria-label="Hasta" value={end} onChange={(e) => setEnd(e.target.value)} style={inputStyle} />
+        </div>
+      </div>
+
+      <button
+        onClick={applyCustom}
+        style={{ padding: "14px", borderRadius: 12, border: "none", cursor: "pointer", fontFamily: "inherit", background: "var(--accent)", color: "var(--on-accent)", fontWeight: 800, fontSize: 15 }}
+      >
+        Aplicar
+      </button>
     </div>
+  );
+}
+
+export function RangeModal({ onClose }: { onClose: () => void }) {
+  return (
+    <Sheet label="Elegir período" onClose={onClose} style={{ maxHeight: "94dvh", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+      <SheetHeader title="Elegir período" onClose={onClose} />
+      <RangePicker onDone={onClose} />
+    </Sheet>
   );
 }

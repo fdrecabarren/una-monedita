@@ -28,6 +28,7 @@ import {
 } from "@/lib/date-range";
 import { type TxFilter, EMPTY_TX_FILTER } from "@/lib/tx-filter";
 import { addInterval } from "@/lib/recurrence";
+import { fmt } from "@/lib/format";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -86,7 +87,13 @@ export interface UIBudget {
   categoryId: string | null;
 }
 
-export type Theme = "light" | "dark";
+// "system" sigue la apariencia del dispositivo (matchMedia); el tema resuelto
+// ("light" | "dark") se escribe en <html data-theme>.
+export type Theme = "system" | "light" | "dark";
+export interface Notice {
+  kind: "error" | "success";
+  text: string;
+}
 export type DashStyle = "A" | "B" | "C";
 export type Accent = "verde" | "teal" | "bosque";
 export type AppCurrency = "ARS" | "USD" | "EUR";
@@ -146,7 +153,8 @@ interface StoreValue {
   setSim: (s: Sim) => void;
   loading: boolean;
   loadError: boolean;
-  notice: string | null;
+  notice: Notice | null;
+  dismissNotice: () => void;
   screen: Screen;
   setScreen: (s: Screen) => void;
   entry: EntryState;
@@ -366,7 +374,7 @@ export function StoreProvider({
   const year = anchor.getFullYear();
   const [loading, setLoading] = useState(false);
 
-  const [theme, setThemeRaw] = useState<Theme>("light");
+  const [theme, setThemeRaw] = useState<Theme>("system");
   const [dashStyle, setDashStyleRaw] = useState<DashStyle>("A");
   const [accent, setAccentRaw] = useState<Accent>("verde");
   const [currency, setCurrencyRaw] = useState<AppCurrency>("EUR");
@@ -378,10 +386,11 @@ export function StoreProvider({
   const [sim, setSim] = useState<Sim>("normal");
   const loadError = !!initialLoadError;
   const [screen, setScreen] = useState<Screen>("dashboard");
+  const [prefsReady, setPrefsReady] = useState(false);
 
   // hydrate prefs from localStorage (external store) — client only, runs once.
   useEffect(() => {
-    const t = (localStorage.getItem("um.theme") as Theme) || "light";
+    const t = (localStorage.getItem("um.theme") as Theme) || "system";
     const d = (localStorage.getItem("um.dash") as DashStyle) || "A";
     const a = (localStorage.getItem("um.accent") as Accent) || "verde";
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
@@ -404,7 +413,29 @@ export function StoreProvider({
     } else {
       setPeriodRaw(p);
     }
+    setPrefsReady(true);
   }, []);
+
+  // Escribe tema resuelto y acento en <html> (el script de app/layout.tsx ya lo
+  // hizo antes del primer paint; esto lo mantiene al cambiar). "system" escucha
+  // los cambios de apariencia del dispositivo. Espera a hidratar las prefs para
+  // no pisar el valor guardado con el default.
+  useEffect(() => {
+    if (!prefsReady) return;
+    const root = document.documentElement;
+    root.dataset.accent = accent;
+    if (theme !== "system") {
+      root.dataset.theme = theme;
+      return;
+    }
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      root.dataset.theme = mq.matches ? "dark" : "light";
+    };
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, [prefsReady, theme, accent]);
 
   const setTheme = useCallback((v: Theme) => {
     setThemeRaw(v);
@@ -495,14 +526,18 @@ export function StoreProvider({
     setEntry({ open: true, kind: sub.type, date: null, edit: null, sub });
   }, []);
 
-  // toast de errores (se auto-limpia)
-  const [notice, setNotice] = useState<string | null>(null);
+  // avisos: los errores quedan hasta que se cierran (time-boxed UI es un
+  // problema de accesibilidad); los éxitos se limpian solos a los 2.5 s.
+  const [notice, setNotice] = useState<Notice | null>(null);
   const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showNotice = useCallback((msg: string) => {
-    setNotice(msg);
+  const showNotice = useCallback((text: string, kind: Notice["kind"] = "error") => {
+    setNotice({ kind, text });
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
-    // los avisos con motivo son más largos: más tiempo para leerlos
-    noticeTimer.current = setTimeout(() => setNotice(null), Math.min(9000, 3000 + msg.length * 50));
+    if (kind === "success") noticeTimer.current = setTimeout(() => setNotice(null), 2500);
+  }, []);
+  const dismissNotice = useCallback(() => {
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    setNotice(null);
   }, []);
   // error de una mutación: muestra el motivo y, si la sesión venció, manda al login
   const notifyFailure = useCallback(
@@ -727,13 +762,14 @@ export function StoreProvider({
           removeTx(tempId);
           const ui = txToUI(created, byId);
           upsertTx(ui.date.getFullYear(), ui);
+          showNotice(`${kind === "Ingreso" ? "Ingreso" : "Gasto"} agregado · ${fmt(amount, currency)}`, "success");
         })
         .catch((err) => {
           removeTx(tempId);
           notifyFailure(err, "No se pudo guardar el movimiento");
         });
     },
-    [byId, upsertTx, removeTx, currency, notifyFailure]
+    [byId, upsertTx, removeTx, currency, notifyFailure, showNotice]
   );
 
   const updateTransaction = useCallback<StoreValue["updateTransaction"]>(
@@ -972,6 +1008,7 @@ export function StoreProvider({
         setSubscriptions((list) => list.map((s) => (s.id === prev.id ? subToUI(subscription) : s)));
         const ui = txToUI(transaction, byId);
         upsertTx(ui.date.getFullYear(), ui);
+        showNotice(`Pago registrado · ${prev.name}`, "success");
       } catch (err) {
         removeTx(tempId);
         setSubscriptions((list) => list.map((s) => (s.id === prev.id ? prev : s)));
@@ -1016,6 +1053,7 @@ export function StoreProvider({
     loading,
     loadError,
     notice,
+    dismissNotice,
     screen,
     setScreen,
     entry,
