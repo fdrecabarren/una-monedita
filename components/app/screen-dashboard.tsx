@@ -1,18 +1,47 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useStore, type TxType } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Donut } from "./Donut";
 import { TrendBars } from "./TrendBars";
-import { PeriodPills, RangeNav, CenterBalance, ActionButton, StateView, FocusToggle } from "./ui";
+import { PeriodPills, RangeNav, CenterBalance, StateView, FocusToggle } from "./ui";
+import { Monedero, BalanceCard } from "./balance";
 import { fmt, fmtShort } from "@/lib/format";
 import { bucketsFor, daysBetween, endOfMonth, rangeLabel as formatRangeLabel } from "@/lib/date-range";
 
-function Ring({ size, donutSize, thickness }: { size: number; donutSize: number; thickness: number }) {
-  const { breakdown } = useStore();
+// Mide el contenedor y devuelve un tamaño entre min y max que entre en él: el
+// anillo de 332px fijo no entraba en un iPhone chico (375×667).
+function useFit(min: number, max: number) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(max);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.clientWidth - 24;
+      const h = el.clientHeight - 8;
+      setSize(Math.round(Math.max(min, Math.min(max, w, h))));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [min, max]);
+  return [ref, size] as const;
+}
+
+function donutLabel(focus: TxType, breakdown: { name: string; pct: number }[]): string {
+  const head = focus === "expense" ? "Gastos por categoría" : "Ingresos por categoría";
+  return `${head}: ${breakdown.map((b) => `${b.name} ${Math.round(b.pct * 100)} %`).join(", ")}`;
+}
+
+function Ring({ size }: { size: number }) {
+  const { breakdown, focus } = useStore();
   const ring = breakdown.slice(0, 8);
-  const R = size / 2 - 30;
+  const k = size / 332;
+  const bubble = Math.round(46 * k);
+  const R = size / 2 - bubble * 0.65;
   return (
     <div style={{ position: "relative", width: size, height: size, margin: "0 auto" }}>
       {ring.map((b, i) => {
@@ -21,14 +50,22 @@ function Ring({ size, donutSize, thickness }: { size: number; donutSize: number;
         const y = size / 2 + R * Math.sin(ang);
         return (
           <div key={b.cat} style={{ position: "absolute", left: x, top: y, transform: "translate(-50%,-50%)", textAlign: "center" }}>
-            <CatBubble icon={b.icon} color={b.color} size={46} stroke={2} title={b.name} />
-            <div style={{ fontSize: 10.5, fontWeight: 800, color: "var(--text-2)", marginTop: 3 }}>{Math.round(b.pct * 100)}%</div>
+            <CatBubble icon={b.icon} color={b.color} size={bubble} stroke={2} title={b.name} />
+            <div style={{ fontSize: 11, fontWeight: 800, color: "var(--text-2)", marginTop: 3 }}>
+              <span className="sr-only">{b.name} </span>
+              {Math.round(b.pct * 100)}%
+            </div>
           </div>
         );
       })}
       <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
-        <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={donutSize} thickness={thickness}>
-          <CenterBalance scale={0.92} />
+        <Donut
+          segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))}
+          size={Math.round(196 * k)}
+          thickness={Math.max(16, Math.round(22 * k))}
+          label={donutLabel(focus, breakdown)}
+        >
+          <CenterBalance scale={0.92 * k} />
         </Donut>
       </div>
     </div>
@@ -51,8 +88,9 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
         const budget = showBudgets ? budgets.find((bd) => bd.categoryId === b.cat) : undefined;
         const budgetPct = budget && budget.limit > 0 ? Math.min(b.total / budget.limit, 1) : null;
         const over = budgetPct !== null && b.total > budget!.limit;
-        const near = budgetPct !== null && budget!.alertAt80 && budgetPct >= 0.8;
-        const barColor = over ? "var(--red)" : near ? "var(--cat-fun)" : b.color;
+        const near = !over && budgetPct !== null && budget!.alertAt80 && budgetPct >= 0.8;
+        const barColor = over ? "var(--expense-fill)" : near ? "var(--warn)" : b.color;
+        const pct = Math.round((budgetPct ?? b.pct) * 100);
         return (
           <button
             key={b.cat}
@@ -62,6 +100,7 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
               alignItems: "center",
               gap: 12,
               padding: compact ? "7px 6px" : "10px 6px",
+              minHeight: 44,
               border: "none",
               background: "transparent",
               cursor: "pointer",
@@ -82,8 +121,11 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
                 <div style={{ width: (budgetPct ?? b.pct) * 100 + "%", height: "100%", borderRadius: 999, background: barColor }} />
               </div>
             </div>
-            <span style={{ fontSize: 11.5, fontWeight: 800, color: over ? "var(--expense)" : "var(--text-3)", width: 32, textAlign: "right" }}>
-              {Math.round((budgetPct ?? b.pct) * 100)}%
+            <span style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 3, fontSize: 12, fontWeight: 800, color: over ? "var(--expense)" : near ? "var(--warn)" : "var(--text-2)", minWidth: 40 }}>
+              {(over || near) && <Icon name="TriangleAlert" size={14} stroke={2.4} color={over ? "var(--expense)" : "var(--warn)"} />}
+              {pct}%
+              {over && <span className="sr-only"> del presupuesto, superado</span>}
+              {near && <span className="sr-only"> del presupuesto, cerca del límite</span>}
             </span>
           </button>
         );
@@ -102,18 +144,21 @@ function useTrend(focus: TxType) {
       key: b.key,
       label: b.label,
       value: visibleTx.reduce(
-        (sum, t) => (t.type === focus && t.date >= b.start && t.date <= b.end ? sum + t.amount : sum),
+        (sum, t) => (!t.transfer && t.type === focus && t.date >= b.start && t.date <= b.end ? sum + t.amount : sum),
         0
       ),
     }));
   }, [visibleTx, range, focus]);
 }
 
-function StatTile({ label, value, color = "var(--text)" }: { label: string; value: string; color?: string }) {
+function StatTile({ label, value, color = "var(--text)", icon }: { label: string; value: string; color?: string; icon?: string }) {
   return (
-    <div style={{ flex: "1 1 130px", background: "var(--surface)", borderRadius: 14, padding: "10px 12px", boxShadow: "var(--shadow-card)" }}>
-      <div style={{ fontSize: 10.5, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--text-3)" }}>{label}</div>
-      <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>{value}</div>
+    <div className="card" style={{ flex: "1 1 130px", padding: "10px 12px" }}>
+      <div className="eyebrow" style={{ color: "var(--text-2)" }}>{label}</div>
+      <div className="num tnum" style={{ fontSize: 16, fontWeight: 600, color, marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>
+        {icon && <Icon name={icon} size={16} stroke={2.4} color={color} />}
+        {value}
+      </div>
     </div>
   );
 }
@@ -152,8 +197,9 @@ function ComparativeStats() {
       {deltaPct !== null && (
         <StatTile
           label={`vs ${formatRangeLabel(prevRange, period)}`}
-          color={good ? "var(--green-700)" : "var(--expense)"}
-          value={`${Math.abs(Math.round(deltaPct))}%`}
+          color={good ? "var(--income)" : "var(--expense)"}
+          icon={deltaPct < 0 ? "TrendingDown" : "TrendingUp"}
+          value={`${Math.abs(Math.round(deltaPct))} % ${deltaPct < 0 ? "menos" : "más"}`}
         />
       )}
       <StatTile label="Promedio / día" value={fmt(avgPerDay, currency)} />
@@ -170,36 +216,46 @@ function TrendSection() {
   const trend = useTrend(focus);
   const total = trend.reduce((s, d) => s + d.value, 0);
   if (total <= 0) return null;
+  const peak = trend.reduce((a, b) => (b.value > a.value ? b : a), trend[0]);
   return (
-    <div style={{ background: "var(--surface)", borderRadius: 16, padding: "14px 14px 8px", boxShadow: "var(--shadow-card)" }}>
-      <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: "var(--text-3)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon name="ChartColumn" size={13} stroke={2.4} color="var(--text-3)" /> {isExpense ? "Tendencia de gasto" : "Tendencia de ingresos"}
+    <div className="card" style={{ padding: "14px 14px 8px" }}>
+      <div className="eyebrow" style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+        <Icon name="ChartColumn" size={14} stroke={2.4} color="var(--text-2)" /> {isExpense ? "Tendencia de gasto" : "Tendencia de ingresos"}
       </div>
-      <TrendBars data={trend} color={isExpense ? "var(--red)" : "var(--green)"} />
+      <TrendBars
+        data={trend}
+        color={isExpense ? "var(--expense-fill)" : "var(--income-fill)"}
+        ariaLabel={`${isExpense ? "Gasto" : "Ingresos"} por período. Más alto: ${peak.label}, ${Math.round(peak.value)}`}
+      />
     </div>
   );
 }
 
-function SaldoBar() {
-  const { totals, openEntry, currency } = useStore();
+function FocusRow() {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 26px 16px" }}>
-      <ActionButton kind="expense" onClick={() => openEntry("expense")} />
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--text-3)" }}>Saldo</div>
-        <div className="num" style={{ fontSize: 21, fontWeight: 600, color: "var(--text)" }}>{fmt(totals.balance, currency)}</div>
-      </div>
-      <ActionButton kind="income" onClick={() => openEntry("income")} />
+    <div style={{ display: "flex", justifyContent: "center", padding: "2px 16px 8px", flex: "0 0 auto" }}>
+      <FocusToggle />
+    </div>
+  );
+}
+
+function FitRing() {
+  const [ref, size] = useFit(240, 332);
+  return (
+    <div ref={ref} className="app-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "grid", placeItems: "center" }}>
+      <Ring size={size} />
     </div>
   );
 }
 
 export function DashboardMobile() {
-  const { dashStyle, sim, setSim, breakdown, visibleTx, currency, budgets, range, focus, loadError } = useStore();
+  const { dashStyle, sim, setSim, breakdown, visibleTx, currency, budgets, range, focus, loadError, rangePending } = useStore();
   const showBudgets = focus === "expense" && isFullMonthRange(range);
+  const showMonedero = !loadError && sim === "normal";
+  const donutSegments = breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }));
   let body;
   if (loadError) body = <StateView kind="error" onRetry={() => window.location.reload()} />;
-  else if (sim === "loading") body = <StateView kind="loading" />;
+  else if (sim === "loading" || (rangePending && visibleTx.length === 0 && sim === "normal")) body = <StateView kind="loading" />;
   else if (sim === "error") body = <StateView kind="error" onRetry={() => setSim("normal")} />;
   else if (sim === "empty" || visibleTx.length === 0) body = <StateView kind="empty" />;
   else if (breakdown.length === 0) {
@@ -216,36 +272,35 @@ export function DashboardMobile() {
     );
   } else if (dashStyle === "A") {
     body = (
-      <div style={{ display: "grid", placeItems: "center", height: "100%" }}>
-        <Ring size={332} donutSize={196} thickness={22} />
+      <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+        <FocusRow />
+        <FitRing />
       </div>
     );
   } else if (dashStyle === "B") {
     body = (
       <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
-        <div style={{ padding: "6px 18px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-          <ComparativeStats />
-          <TrendSection />
-        </div>
+        <FocusRow />
         <div style={{ display: "grid", placeItems: "center", padding: "6px 0 12px" }}>
-          <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={188} thickness={20}>
+          <Donut segments={donutSegments} size={188} thickness={20} label={donutLabel(focus, breakdown)}>
             <CenterBalance scale={0.9} />
           </Donut>
         </div>
-        <div style={{ padding: "0 18px 12px" }}>
+        <div style={{ padding: "0 16px 12px" }}>
           <LegendList limit={8} />
+        </div>
+        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <ComparativeStats />
+          <TrendSection />
         </div>
       </div>
     );
   } else {
     body = (
       <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
-        <div style={{ padding: "2px 16px 0", display: "flex", flexDirection: "column", gap: 10 }}>
-          <ComparativeStats />
-          <TrendSection />
-        </div>
+        <FocusRow />
         <div style={{ display: "grid", placeItems: "center", padding: "2px 0 10px" }}>
-          <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={176} thickness={19}>
+          <Donut segments={donutSegments} size={176} thickness={19} label={donutLabel(focus, breakdown)}>
             <CenterBalance scale={0.86} />
           </Donut>
         </div>
@@ -254,18 +309,18 @@ export function DashboardMobile() {
             const bud = showBudgets ? budgets.find((x) => x.categoryId === b.cat) : undefined;
             const pct = bud && bud.limit > 0 ? Math.min(b.total / bud.limit, 1) : null;
             const over = pct !== null && b.total > bud!.limit;
-            const near = pct !== null && bud!.alertAt80 && pct >= 0.8;
+            const near = !over && pct !== null && bud!.alertAt80 && pct >= 0.8;
             return (
-              <div key={b.cat} style={{ display: "flex", alignItems: "center", gap: 9, background: "var(--surface)", borderRadius: 14, padding: "9px 11px", boxShadow: "var(--shadow-card)" }}>
+              <div key={b.cat} className="card" style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 11px" }}>
                 <CatBubble icon={b.icon} color={b.color} size={34} stroke={2} />
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</div>
-                  <div className="num tnum" style={{ fontSize: 11.5, color: over ? "var(--expense)" : "var(--text-3)", fontWeight: 600 }}>
+                  <div className="num tnum" style={{ fontSize: 12, color: over ? "var(--expense)" : near ? "var(--warn)" : "var(--text-2)", fontWeight: 600 }}>
                     {bud ? `${fmtShort(b.total, currency)} / ${fmtShort(bud.limit, currency)}` : `${Math.round(b.pct * 100)}% · ${fmtShort(b.total, currency)}`}
                   </div>
                   {pct !== null && (
                     <div style={{ height: 4, borderRadius: 999, background: "var(--bg-2)", overflow: "hidden", marginTop: 4 }}>
-                      <div style={{ width: pct * 100 + "%", height: "100%", borderRadius: 999, background: over ? "var(--red)" : near ? "var(--cat-fun)" : b.color }} />
+                      <div style={{ width: pct * 100 + "%", height: "100%", borderRadius: 999, background: over ? "var(--expense-fill)" : near ? "var(--warn)" : b.color }} />
                     </div>
                   )}
                 </div>
@@ -273,21 +328,24 @@ export function DashboardMobile() {
             );
           })}
         </div>
+        <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <ComparativeStats />
+          <TrendSection />
+        </div>
       </div>
     );
   }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ padding: "6px 18px 10px", display: "flex", flexDirection: "column", gap: 10, flex: "0 0 auto" }}>
-        <div style={{ display: "flex", justifyContent: "center" }}><PeriodPills /></div>
-        <div style={{ display: "flex", justifyContent: "center" }}><FocusToggle /></div>
+      <div style={{ padding: "4px 16px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
+        <PeriodPills />
         <RangeNav />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>{body}</div>
-      {sim === "normal" && visibleTx.length > 0 && (
+      {showMonedero && (
         <div style={{ borderTop: "1px solid var(--line)", background: "var(--surface)", flex: "0 0 auto" }}>
-          <SaldoBar />
+          <Monedero />
         </div>
       )}
     </div>
@@ -295,10 +353,10 @@ export function DashboardMobile() {
 }
 
 export function DashboardDesktop() {
-  const { breakdown, sim, setSim, visibleTx, focus, loadError } = useStore();
+  const { breakdown, sim, setSim, visibleTx, focus, loadError, rangePending } = useStore();
   let center;
   if (loadError) center = <StateView kind="error" onRetry={() => window.location.reload()} />;
-  else if (sim === "loading") center = <StateView kind="loading" />;
+  else if (sim === "loading" || (rangePending && visibleTx.length === 0 && sim === "normal")) center = <StateView kind="loading" />;
   else if (sim === "error") center = <StateView kind="error" onRetry={() => setSim("normal")} />;
   else if (sim === "empty" || visibleTx.length === 0) center = <StateView kind="empty" />;
   else if (breakdown.length === 0) {
@@ -315,8 +373,8 @@ export function DashboardDesktop() {
     );
   } else
     center = (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 56, flexWrap: "wrap", height: "100%" }}>
-        <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={300} thickness={32}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 56, flexWrap: "wrap", padding: "8px 0 16px" }}>
+        <Donut segments={breakdown.map((b) => ({ value: b.total, color: b.color, cat: b.cat }))} size={300} thickness={32} label={donutLabel(focus, breakdown)}>
           <CenterBalance scale={1.28} />
         </Donut>
         <div style={{ width: 280, maxWidth: "40vw" }}>
@@ -325,22 +383,28 @@ export function DashboardDesktop() {
       </div>
     );
   const showStats = !(loadError || sim === "loading" || sim === "error" || sim === "empty" || visibleTx.length === 0 || breakdown.length === 0);
+  const showBalance = !loadError && sim === "normal";
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", padding: "26px 32px" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-        <RangeNav center={false} />
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <FocusToggle />
+    <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18, padding: "26px 32px", minHeight: "100%" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <RangeNav center={false} />
           <PeriodPills />
         </div>
+        {showBalance && (
+          <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 320px", minWidth: 0 }}><BalanceCard /></div>
+            {showStats && (
+              <div style={{ flex: "2 1 360px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+                <ComparativeStats />
+                <TrendSection />
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{ display: "flex", justifyContent: "center" }}><FocusToggle /></div>
+        <div style={{ flex: 1, minHeight: 0 }}>{center}</div>
       </div>
-      {showStats && (
-        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", marginBottom: 18, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 260px" }}><ComparativeStats /></div>
-          <div style={{ flex: "2 1 360px" }}><TrendSection /></div>
-        </div>
-      )}
-      <div style={{ flex: 1, minHeight: 0 }}>{center}</div>
     </div>
   );
 }

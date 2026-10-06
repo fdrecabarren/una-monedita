@@ -43,3 +43,22 @@ export function fmtShort(n: number, currency?: CurrencyCode): string {
   if (abs >= 1000) return symbol + "\u00a0" + Math.round(n / 1000) + "k";
   return symbol + "\u00a0" + Math.round(n);
 }
+
+// "1.234,56" / "1234.56" / "1234,56" / "  $ 1 234 " → número. null si no es un número.
+export function parseAmount(raw: string): number | null {
+  let t = raw.replace(/[^\d.,\-−]/g, "").replace("−", "-");
+  if (!t || t === "-") return null;
+  const lastComma = t.lastIndexOf(",");
+  const lastDot = t.lastIndexOf(".");
+  if (lastComma >= 0 && lastDot >= 0) {
+    // el último separador es el decimal; el otro es de miles
+    t = lastComma > lastDot ? t.replace(/\./g, "").replace(",", ".") : t.replace(/,/g, "");
+  } else if (lastComma >= 0) {
+    t = t.replace(",", ".");
+  } else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) {
+    // 150.000 / 1.234.567: puntos de miles (formato es-AR)
+    t = t.replace(/\./g, "");
+  }
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+}

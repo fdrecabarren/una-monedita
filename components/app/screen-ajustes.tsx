@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useStore, type DashStyle, type Accent, type AppCurrency } from "./store";
+import { useStore, failureText, type DashStyle, type Accent, type AppCurrency } from "./store";
 import { Icon } from "./Icon";
 import { SegmentedControl } from "./ui";
+import { fmt, parseAmount } from "@/lib/format";
+import { addDays, startOfDay } from "@/lib/date-range";
 
 const NOTION_TEMPLATE_URL =
   "https://app.notion.com/p/UNA-MONEDITA-copy-3795c48e39b6803da9abf7ab40919b39?source=copy_link";
@@ -201,6 +203,136 @@ function Pills<T extends string>({ label, value, options, onChange }: { label: s
   return <SegmentedControl<T> label={label} options={options} value={value} onChange={onChange} stretch />;
 }
 
+// Saldo: interruptor del acumulado + saldo inicial (Notion · Accounts.InitialBalance).
+function SaldoSection() {
+  const { carryOver, setCarryOver, initialBalance, setInitialBalance, balanceBefore, currency } = useStore();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [calcOpen, setCalcOpen] = useState(false);
+  const [todayAmount, setTodayAmount] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const shown = draft ?? (initialBalance === null ? "" : String(initialBalance));
+  const dirty = draft !== null && parseAmount(draft) !== initialBalance;
+  // saldo contando todo lo registrado hasta hoy (null si el historial no está listo)
+  const closingToday = balanceBefore(startOfDay(addDays(new Date(), 1)));
+  const canCalc = closingToday !== null && initialBalance !== null;
+
+  async function save() {
+    const n = parseAmount(shown);
+    if (n === null) {
+      setMsg({ ok: false, text: "Ingresá un número." });
+      return;
+    }
+    setBusy(true);
+    setMsg(null);
+    try {
+      await setInitialBalance(Math.round(n * 100) / 100);
+      setDraft(null);
+      setMsg({ ok: true, text: "Saldo inicial guardado." });
+    } catch (err) {
+      setMsg({ ok: false, text: failureText(err, "No se pudo guardar el saldo inicial") });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function useToday() {
+    const hoy = parseAmount(todayAmount);
+    if (hoy === null || closingToday === null || initialBalance === null) {
+      setMsg({ ok: false, text: "Ingresá cuánta plata tenés hoy." });
+      return;
+    }
+    // disponible hoy = saldo inicial + movimientos hasta hoy  →  inicial = hoy − movimientos
+    const initial = Math.round((hoy - (closingToday - initialBalance)) * 100) / 100;
+    setDraft(String(initial));
+    setCalcOpen(false);
+    setTodayAmount("");
+    setMsg({ ok: true, text: `Saldo inicial calculado: ${fmt(initial, currency)}. Tocá Guardar para confirmarlo.` });
+  }
+
+  return (
+    <Row
+      label="Saldo"
+      hint="Acumulado: cada período arranca con lo que te quedó del anterior, así ves cuánta plata tenés. Solo del período: se reinicia en cada período."
+    >
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <Pills
+          label="Saldo"
+          value={carryOver ? "on" : "off"}
+          onChange={(v) => setCarryOver(v === "on")}
+          options={[{ value: "off", label: "Solo del período" }, { value: "on", label: "Acumulado" }]}
+        />
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <label htmlFor="saldo-inicial" style={{ fontWeight: 800, fontSize: 14 }}>Saldo inicial</label>
+          <div className="caption" style={{ color: "var(--text-3)" }}>¿Con cuánta plata arrancaste? Es lo que tenías antes de registrar tu primer movimiento.</div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              id="saldo-inicial"
+              inputMode="decimal"
+              value={shown}
+              disabled={initialBalance === null}
+              onChange={(e) => {
+                setDraft(e.target.value);
+                setMsg(null);
+              }}
+              placeholder={initialBalance === null ? "Cargando…" : "Ej: 150000"}
+              style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
+            />
+            <button
+              onClick={save}
+              disabled={busy || !dirty}
+              style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "none", background: dirty ? "var(--accent)" : "var(--bg-2)", color: dirty ? "var(--on-accent)" : "var(--text-3)", fontWeight: 800, fontSize: 14.5, cursor: busy || !dirty ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+            >
+              {busy ? "Guardando…" : "Guardar"}
+            </button>
+          </div>
+          {msg && (
+            <div role={msg.ok ? "status" : "alert"} style={{ fontSize: 13, fontWeight: 700, color: msg.ok ? "var(--income)" : "var(--expense)", lineHeight: 1.4 }}>
+              {msg.text}
+            </div>
+          )}
+        </div>
+
+        <div>
+          <button
+            onClick={() => setCalcOpen((o) => !o)}
+            disabled={!canCalc}
+            aria-expanded={calcOpen}
+            style={{ minHeight: 44, border: "none", background: "transparent", cursor: canCalc ? "pointer" : "not-allowed", fontFamily: "inherit", color: canCalc ? "var(--accent-ink)" : "var(--text-3)", fontWeight: 800, fontSize: 13.5, padding: "0 2px", textAlign: "left" }}
+          >
+            Calcularlo desde lo que tengo hoy
+          </button>
+          {!canCalc && (
+            <div className="caption" style={{ color: "var(--text-3)" }}>
+              {carryOver ? "Disponible cuando termine de cargar el historial." : "Activá el saldo acumulado para usarlo."}
+            </div>
+          )}
+          {calcOpen && canCalc && (
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <input
+                aria-label="Plata que tenés hoy"
+                inputMode="decimal"
+                value={todayAmount}
+                onChange={(e) => setTodayAmount(e.target.value)}
+                placeholder="¿Cuánta plata tenés hoy?"
+                style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
+              />
+              <button
+                onClick={useToday}
+                style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
+              >
+                Calcular
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </Row>
+  );
+}
+
 export function Ajustes() {
   const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency, setScreen } = useStore();
   const [loggingOut, setLoggingOut] = useState(false);
@@ -229,6 +361,8 @@ export function Ajustes() {
         <Row label="Moneda" hint="Usada al registrar nuevos movimientos">
           <Pills label="Moneda" value={currency} onChange={(v) => setCurrency(v as AppCurrency)} options={[{ value: "EUR", label: "€ Euro" }, { value: "ARS", label: "$ Peso" }, { value: "USD", label: "US$ Dólar" }]} />
         </Row>
+
+        <SaldoSection />
 
         <Row label="Tema">
           <Pills label="Tema" value={theme} onChange={setTheme} options={[{ value: "system", label: "Automático" }, { value: "light", label: "Claro" }, { value: "dark", label: "Oscuro" }]} />

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useStore, type UICategory, type UITx } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { StateView, MonthNav, MONTHS_FULL } from "./ui";
-import { fmt } from "@/lib/format";
+import { fmt, fmtShort } from "@/lib/format";
 
 const WEEKDAYS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"];
 const WEEKDAYS_FULL = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -39,7 +39,7 @@ function DayRow({ x, cat, onClick }: { x: UITx; cat: UICategory; onClick: () => 
 }
 
 export function Calendario() {
-  const { transactions, byId, month, year, sim, setSim, openEntry, openEdit, mode, currency } = useStore();
+  const { transactions, byId, month, year, sim, setSim, openEntry, openEdit, mode, currency, carryOver, balanceBefore } = useStore();
   const autoWide = useIsWide();
   const wide = mode ? mode === "desktop" : autoWide;
 
@@ -60,13 +60,25 @@ export function Calendario() {
   const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7;
   const rows = Math.ceil((firstWeekday + daysInMonth) / 7);
 
-  // Tamaño de celda calculado para que la grilla completa entre en pantalla sin scroll.
-  // `reserved` = alto de cabecera, nav inferior, MonthNav, fila de días y espacio mínimo del detalle.
+  // Tamaño de celda para que la grilla completa entre sin scroll: se mide el alto
+  // real del contenedor (ya sin cabecera ni nav) y se le resta lo que ocupan
+  // MonthNav, el resumen del mes, la fila de días y un mínimo para el detalle.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [boxH, setBoxH] = useState(0);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => setBoxH(el.clientHeight);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [wide]);
   const gap = 6;
-  const reserved = wide ? 132 : 357;
+  const reserved = wide ? 190 : 300;
   const cellMax = wide ? 96 : 40;
-  const cell = `max(26px, min((100dvh - ${reserved + (rows - 1) * gap}px - env(safe-area-inset-bottom)) / ${rows}, ${cellMax}px))`;
-  const gridMaxWidth = `calc(${cell} * 7 + ${gap * 6}px)`;
+  const cellPx = boxH ? Math.max(26, Math.min((boxH - reserved - (rows - 1) * gap) / rows, cellMax)) : 36;
+  const gridMaxWidth = `${Math.round(cellPx * 7 + gap * 6)}px`;
 
   const monthKey = `${year}-${month}`;
   const firstWithTx = useMemo(
@@ -84,9 +96,23 @@ export function Calendario() {
   let dInc = 0;
   let dExp = 0;
   dayTx.forEach((t) => {
+    if (t.transfer) return;
     if (t.type === "income") dInc += t.amount;
     else dExp += t.amount;
   });
+  let mInc = 0;
+  let mExp = 0;
+  monthTx.forEach((t) => {
+    if (t.transfer) return;
+    if (t.type === "income") mInc += t.amount;
+    else mExp += t.amount;
+  });
+  const monthNet = mInc - mExp;
+  const signedColor = (n: number) => (n < 0 ? "var(--expense)" : n > 0 ? "var(--income)" : "var(--text-2)");
+  // saldo al cierre del mes / del día (null mientras el historial no esté listo o con el acumulado apagado)
+  const monthClosing = carryOver ? balanceBefore(new Date(year, month + 1, 1)) : null;
+  const dayNet = dInc - dExp;
+  const dayClosing = carryOver ? balanceBefore(new Date(year, month, selDay + 1)) : null;
 
   if (sim === "loading") return <StateView kind="loading" />;
   if (sim === "error") return <StateView kind="error" onRetry={() => setSim("normal")} />;
@@ -95,6 +121,7 @@ export function Calendario() {
     const txs = byDay[d] || [];
     const on = d === selDay;
     const isToday = isThisMonth && d === today.getDate();
+    const cellNet = txs.reduce((n, t) => (t.transfer ? n : n + (t.type === "income" ? t.amount : -t.amount)), 0);
     const colors = [...new Set(txs.map((t) => (t.cat ? byId[t.cat]?.color : null)).filter(Boolean))].slice(0, 3) as string[];
     return (
       <button
@@ -126,6 +153,12 @@ export function Calendario() {
             <span key={i} style={{ width: wide ? 5 : 4, height: wide ? 5 : 4, borderRadius: 999, background: on ? "var(--surface)" : c }} />
           ))}
         </span>
+        {wide && cellNet !== 0 && (
+          <span className="tnum" style={{ fontSize: 12, fontWeight: 700, color: on ? "var(--surface)" : signedColor(cellNet) }}>
+            {cellNet < 0 ? "−" : "+"}
+            {fmtShort(Math.abs(cellNet), currency)}
+          </span>
+        )}
       </button>
     );
   }
@@ -148,6 +181,21 @@ export function Calendario() {
     </div>
   );
 
+  const summary = (
+    <div className="card" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "8px 14px" }}>
+      <div>
+        <div className="eyebrow">Balance mensual</div>
+        <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: signedColor(monthNet) }}>{fmt(monthNet, currency, { sign: true })}</div>
+      </div>
+      {monthClosing !== null && (
+        <div style={{ textAlign: "right" }}>
+          <div className="eyebrow">Saldo al cierre</div>
+          <div className="num tnum" style={{ fontSize: 18, fontWeight: 600, color: monthClosing < 0 ? "var(--expense)" : "var(--text)" }}>{fmt(monthClosing, currency)}</div>
+        </div>
+      )}
+    </div>
+  );
+
   const dateObj = new Date(year, month, selDay);
   const detail = (
     <div style={{ display: "flex", flexDirection: "column", height: wide ? "100%" : "auto" }}>
@@ -167,6 +215,21 @@ export function Calendario() {
           <Icon name="Plus" size={22} stroke={2.6} color="var(--on-accent)" />
         </button>
       </div>
+
+      {(dayTx.length > 0 || dayClosing !== null) && (
+        <div className="caption tnum" style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", columnGap: 14, rowGap: 2 }}>
+          {dayTx.length > 0 && (
+            <span>
+              Balance del día <strong style={{ color: signedColor(dayNet) }}>{fmt(dayNet, currency, { sign: true })}</strong>
+            </span>
+          )}
+          {dayClosing !== null && (
+            <span>
+              Saldo al cierre <strong style={{ color: dayClosing < 0 ? "var(--expense)" : "var(--text)" }}>{fmt(dayClosing, currency)}</strong>
+            </span>
+          )}
+        </div>
+      )}
 
       {dayTx.length > 0 ? (
         <>
@@ -211,11 +274,12 @@ export function Calendario() {
 
   if (wide) {
     return (
-      <div style={{ height: "100%", display: "flex", flexDirection: "column", padding: "24px 28px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+      <div ref={boxRef} style={{ height: "100%", display: "flex", flexDirection: "column", padding: "24px 28px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <div className="num" style={{ fontWeight: 600, fontSize: 28 }}>Calendario</div>
           <MonthNav center={false} />
         </div>
+        <div style={{ marginBottom: 14, maxWidth: 420 }}>{summary}</div>
         <div style={{ display: "flex", gap: 28, flex: 1, minHeight: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>{grid}</div>
           <div style={{ width: 360, flex: "0 0 auto", background: "var(--surface)", borderRadius: 18, border: "1px solid var(--line)", padding: "18px 18px", display: "flex", flexDirection: "column" }}>
@@ -227,8 +291,9 @@ export function Calendario() {
   }
 
   return (
-    <div style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", padding: "4px 14px 0" }}>
-      <div style={{ display: "flex", justifyContent: "center", margin: "2px 0 8px", flex: "0 0 auto" }}><MonthNav /></div>
+    <div ref={boxRef} style={{ height: "100%", minHeight: 0, display: "flex", flexDirection: "column", padding: "4px 16px 0" }}>
+      <div style={{ display: "flex", justifyContent: "center", margin: "2px 0 6px", flex: "0 0 auto" }}><MonthNav /></div>
+      <div style={{ flex: "0 0 auto", marginBottom: 10 }}>{summary}</div>
       <div style={{ flex: "0 0 auto" }}>{grid}</div>
       <div style={{ height: 1, background: "var(--line)", margin: "12px 0 10px", flex: "0 0 auto" }} />
       <div className="app-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingBottom: 12 }}>{detail}</div>

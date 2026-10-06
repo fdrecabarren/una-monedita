@@ -44,12 +44,6 @@
 
   --shadow-modal: 0 8px 24px rgba(25, 24, 23, 0.12);
 
-  /* TEMPORAL: alias legacy hasta migrar Shell, ui, screen-dashboard y AppRoot (plan Fase 2/5). Borrar al terminar. */
-  --green: var(--accent);
-  --green-700: var(--accent-ink);
-  --green-soft: var(--accent-soft);
-  --red: var(--expense-fill);
-  --shadow-card: none;
 }
 
 /* ============ LIGHT (default) ============ */

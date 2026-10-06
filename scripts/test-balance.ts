@@ -4,6 +4,7 @@
 // pasa en cualquier zona horaria.
 
 import { netBetween, openingBalance, closingCutoff, carryFor, balanceSeries, type BalTx } from "../lib/balance";
+import { parseAmount } from "../lib/format";
 import { rangeFor, bucketsFor, balanceLabel, startOfDay, endOfDay, toISO, type DateRange } from "../lib/date-range";
 
 let passed = 0;
@@ -161,6 +162,22 @@ const str = (r: DateRange) => `${toISO(r.start)}..${toISO(r.end)}`;
   eq("label mes", balanceLabel("Mes", rangeFor("Mes", now), now), "Balance mensual");
   eq("label año", balanceLabel("Año", rangeFor("Año", now), now), "Balance anual");
   eq("label rango", balanceLabel("Personalizado", rangeFor("Mes", now), now), "Balance del período");
+}
+
+// ---- parseAmount (campo "Saldo inicial") ----
+{
+  eq("parse 150000", parseAmount("150000"), 150000);
+  eq("parse 150.000 (miles es-AR)", parseAmount("150.000"), 150000);
+  eq("parse 1.234.567", parseAmount("1.234.567"), 1234567);
+  eq("parse 1234.56 (decimal)", parseAmount("1234.56"), 1234.56);
+  eq("parse 1.234,56", parseAmount("1.234,56"), 1234.56);
+  eq("parse 1,234.56", parseAmount("1,234.56"), 1234.56);
+  eq("parse 1234,5", parseAmount("1234,5"), 1234.5);
+  eq("parse con símbolo y espacios", parseAmount(" $ 12 500 "), 12500);
+  eq("parse negativo", parseAmount("-2000"), -2000);
+  eq("parse negativo con signo menos tipográfico", parseAmount("−2000"), -2000);
+  eq("parse vacío", parseAmount(""), null);
+  eq("parse texto", parseAmount("abc"), null);
 }
 
 if (failures.length) {
