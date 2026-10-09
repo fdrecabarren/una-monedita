@@ -57,7 +57,8 @@ function addMonths(iso: string, months: number, dueDay?: number | null): string 
   const targetDay = dueDay ?? d;
   const total = (m - 1) + months;
   const ny = y + Math.floor(total / 12);
-  const nm = (total % 12) + 1;
+  // módulo positivo: con meses negativos `%` da resto negativo (retroceder desde enero)
+  const nm = (((total % 12) + 12) % 12) + 1;
   return toISODate(ny, nm, clampDay(ny, nm, targetDay));
 }
 
@@ -73,6 +74,20 @@ export function addInterval(
   if (freq === "Personalizada") return addDays(iso, customIntervalDays && customIntervalDays > 0 ? customIntervalDays : 30);
   const months = (freq && MONTHS_BY_FREQ[freq]) || 1;
   return addMonths(iso, months, dueDay);
+}
+
+// Retrocede una fecha un período de la frecuencia dada (inverso de addInterval).
+export function subtractInterval(
+  iso: string,
+  freq: Frequency | null,
+  customIntervalDays?: number | null,
+  dueDay?: number | null
+): string {
+  if (freq === "Diaria") return addDays(iso, -1);
+  if (freq === "Semanal") return addDays(iso, -7);
+  if (freq === "Personalizada") return addDays(iso, -(customIntervalDays && customIntervalDays > 0 ? customIntervalDays : 30));
+  const months = (freq && MONTHS_BY_FREQ[freq]) || 1;
+  return addMonths(iso, -months, dueDay);
 }
 
 interface RecurrenceLike {
@@ -129,4 +144,73 @@ export function monthlyEquivalent(amount: number, sub: RecurrenceLike): number {
 export function todayISO(): string {
   const now = new Date();
   return toISODate(now.getFullYear(), now.getMonth() + 1, now.getDate());
+}
+
+// Primer y último día del mes de `today` (ISO local).
+export function monthBounds(today: string): { start: string; end: string } {
+  const { y, m } = parseYMD(today);
+  return { start: toISODate(y, m, 1), end: toISODate(y, m, daysInMonth(y, m)) };
+}
+
+// Estado de un fijo en el MES de `today` (el contador "N/M pagados" arranca de
+// cero cada mes porque se calcula contra el mes calendario, no contra "hay pago"):
+//   paused  pausado (no cuenta)
+//   late    le tocaba antes de hoy y sigue sin pagarse
+//   today   vence hoy
+//   pending vence más adelante este mes
+//   paid    el período de este mes ya se registró
+//   later   no le toca este mes (anual, bimestral, recién creado con vencimiento futuro)
+//   none    sin fechas
+// Limitación aceptada: Diaria/Semanal/Personalizada corta muestran "pending" casi
+// todo el mes porque Notion guarda un solo próximo vencimiento, no uno por período.
+export type SubMonthKind = "paused" | "late" | "today" | "pending" | "paid" | "later" | "none";
+
+export interface SubMonthStatus {
+  kind: SubMonthKind;
+  // vencimiento (late/today/pending/later) o fecha del último pago (paid)
+  date: string | null;
+}
+
+export interface SubLike extends RecurrenceLike {
+  status: "Activa" | "Pausada" | "Cancelada" | null;
+  nextChargeDate: string | null;
+  lastChargedDate: string | null;
+}
+
+export function monthStatus(sub: SubLike, today: string): SubMonthStatus {
+  if (sub.status === "Pausada") return { kind: "paused", date: null };
+  const { start: mStart, end: mEnd } = monthBounds(today);
+  const next = sub.nextChargeDate?.slice(0, 10) ?? null;
+  const last = sub.lastChargedDate?.slice(0, 10) ?? null;
+
+  if (!next) {
+    return last && last >= mStart ? { kind: "paid", date: last } : { kind: "none", date: null };
+  }
+  if (next <= mEnd) {
+    return { kind: next < today ? "late" : next === today ? "today" : "pending", date: next };
+  }
+  // El próximo vencimiento cae después de este mes. Si el período de este mes ya
+  // se pagó, `next` ya avanzó: retrocedemos desde `next` para ver si este mes le tocaba.
+  let d = next;
+  for (let i = 0; i < 1000 && d > mEnd; i++) {
+    d = subtractInterval(d, sub.frequency, sub.customIntervalDays, sub.dueDay);
+  }
+  const occursInMonth = d >= mStart;
+  if (last && (occursInMonth || last >= mStart)) return { kind: "paid", date: last };
+  return { kind: "later", date: next };
+}
+
+// Contador del encabezado de Fijos: solo activos; `due` = los que cuentan este mes.
+export function monthCounter(subs: SubLike[], today: string): { paid: number; due: number } {
+  let paid = 0;
+  let due = 0;
+  for (const s of subs) {
+    if (s.status !== "Activa") continue;
+    const k = monthStatus(s, today).kind;
+    if (k === "paid") {
+      paid++;
+      due++;
+    } else if (k === "late" || k === "today" || k === "pending") due++;
+  }
+  return { paid, due };
 }

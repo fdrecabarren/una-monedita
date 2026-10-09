@@ -3,8 +3,8 @@
 // Todas las fechas se construyen con el constructor local, así que el archivo
 // pasa en cualquier zona horaria.
 
-import { netBetween, openingBalance, closingCutoff, carryFor, balanceSeries, type BalTx } from "../lib/balance";
-import { parseAmount } from "../lib/format";
+import { netBetween, openingBalance, closingCutoff, carryFor, balanceSeries, availableFor, initialForAvailable, type BalTx } from "../lib/balance";
+import { parseAmount, fmt, fitFontSize } from "../lib/format";
 import { rangeFor, bucketsFor, balanceLabel, startOfDay, endOfDay, toISO, type DateRange } from "../lib/date-range";
 
 let passed = 0;
@@ -162,6 +162,62 @@ const str = (r: DateRange) => `${toISO(r.start)}..${toISO(r.end)}`;
   eq("label mes", balanceLabel("Mes", rangeFor("Mes", now), now), "Balance mensual");
   eq("label año", balanceLabel("Año", rangeFor("Año", now), now), "Balance anual");
   eq("label rango", balanceLabel("Personalizado", rangeFor("Mes", now), now), "Balance del período");
+}
+
+// ---- Disponible hoy (independiente del rango) ----
+{
+  // El ejemplo del usuario: 1000, gasta 100 → 900, cobra 400 → 1300, cambia el mes → 1300
+  const sep = d(2026, 9, 20);
+  const oct = d(2026, 10, 3);
+  const nov = d(2026, 11, 2);
+  eq("sin movimientos: 1000", availableFor([], sep, 1000).amount, 1000);
+  const t1 = [exp(d(2026, 9, 21), 100)];
+  eq("gasta 100 → 900", availableFor(t1, d(2026, 9, 22), 1000).amount, 900);
+  const t2 = [...t1, inc(oct, 400)];
+  eq("cobra 400 → 1300", availableFor(t2, oct, 1000).amount, 1300);
+  eq("cambia el mes → sigue 1300", availableFor(t2, nov, 1000).amount, 1300);
+  eq("monthNet del mes en curso", availableFor(t2, oct, 1000).monthNet, 400);
+  eq("monthNet el mes siguiente es 0", availableFor(t2, nov, 1000).monthNet, 0);
+  // movimiento de mañana: no cuenta todavía
+  const fut = [...t2, exp(d(2026, 10, 4), 50)];
+  const a = availableFor(fut, oct, 1000);
+  eq("futuro excluido del monto", a.amount, 1300);
+  eq("futuro se cuenta aparte", a.futureCount, 1);
+  // el movimiento de hoy a última hora SÍ entra (fin de día)
+  eq("hoy a las 23:59 entra", availableFor([exp(d(2026, 10, 3, 23), 10)], d(2026, 10, 3, 8), 100).amount, 90);
+  // transferencias ignoradas
+  const tr: BalTx = { date: oct, amount: 700, type: "expense", transfer: true };
+  eq("transferencias ignoradas", availableFor([tr], oct, 500).amount, 500);
+  eq("transferencias no cuentan como futuras", availableFor([{ ...tr, date: d(2026, 10, 9) }], oct, 0).futureCount, 0);
+}
+
+// ---- initialForAvailable (¿Cuánta plata tenés hoy?) ----
+{
+  const now = d(2026, 10, 9);
+  // caso real: neto histórico 1022,52 y el usuario tiene 1000
+  const txs = [inc(d(2026, 5, 3), 4620.55), exp(d(2026, 6, 1), 3598.03)];
+  const init = initialForAvailable(txs, 1000, now);
+  eq("inicial = 1000 − 1022,52", init, -22.52);
+  eq("con ese inicial el disponible es EXACTO 1000", availableFor(txs, now, init).amount, 1000);
+  // objetivo 0: nunca -0
+  const zero = initialForAvailable([inc(d(2026, 5, 3), 50)], 50, now);
+  check("objetivo = neto da 0 (no -0)", Object.is(zero, 0), String(zero));
+  check("fmt de 0 no empieza con signo", !fmt(availableFor([inc(d(2026, 5, 3), 50)], now, zero).amount, "EUR").startsWith("−"));
+  // un movimiento de mañana no entra en el cálculo del inicial
+  eq("futuro no entra en el inicial", initialForAvailable([...txs, exp(d(2026, 10, 10), 999)], 1000, now), -22.52);
+  // moneda con decimales flotantes
+  eq("sin ruido de flotantes", availableFor([inc(d(2026, 5, 1), 0.1), inc(d(2026, 5, 2), 0.2)], now, 0).amount, 0.3);
+}
+
+// ---- fitFontSize ----
+{
+  eq("techo: texto corto usa el máximo", fitFontSize("€ 5", 200, 34), 34);
+  eq("piso: texto larguísimo usa el mínimo", fitFontSize("€ 1.234.567.890,12", 60, 34, 12), 12);
+  const t = fmt(1060.63, "EUR");
+  const s = fitFontSize(t, 98, 34);
+  check("€ 1.060,63 entra en 98px", s * t.length * 0.62 <= 98 + 1e-9, `size ${s}`);
+  check("€ 1.060,63 en 98px no llega al máximo", s < 34);
+  eq("ancho cero cae al piso", fitFontSize("€ 10", 0, 34, 11), 11);
 }
 
 // ---- parseAmount (campo "Saldo inicial") ----

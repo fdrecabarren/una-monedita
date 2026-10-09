@@ -46,6 +46,14 @@ export function fmtShort(n: number, currency?: CurrencyCode): string {
   return sign + symbol + "\u00a0" + Math.round(abs);
 }
 
+// Tamaño de fuente (px) para que `text` entre en `availPx` de ancho, entre minPx y
+// maxPx. Estimación por cantidad de caracteres: las cifras tabulares de Fraunces
+// miden ≈ 0,62 em. Redondea hacia abajo a 0,1 px para no pasarse.
+export function fitFontSize(text: string, availPx: number, maxPx: number, minPx = 11, em = 0.62): number {
+  const raw = availPx / (Math.max(text.length, 1) * em);
+  return Math.max(minPx, Math.min(maxPx, Math.floor(raw * 10) / 10));
+}
+
 // "1.234,56" / "1234.56" / "1234,56" / "  $ 1 234 " → número. null si no es un número.
 export function parseAmount(raw: string): number | null {
   let t = raw.replace(/[^\d.,\-−]/g, "").replace("−", "-");
