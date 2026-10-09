@@ -38,8 +38,8 @@ export const viewport: Viewport = {
 };
 
 // Resuelve tema y acento antes del primer paint (evita el destello claro).
-// um.theme: "system" | "light" | "dark" (default system); um.accent: verde | teal | bosque.
-const THEME_BOOTSTRAP = `(function(){try{var d=document.documentElement,t=localStorage.getItem("um.theme")||"system",a=localStorage.getItem("um.accent")||"verde";if(t!=="light"&&t!=="dark")t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";d.dataset.theme=t;d.dataset.accent=a;}catch(e){document.documentElement.dataset.theme="light"}})();`;
+// um.theme: "system" | "light" | "dark" (default system); um.accent: verde | teal | grafito (cualquier otro valor, p. ej. el viejo "bosque", cae en verde).
+const THEME_BOOTSTRAP = `(function(){try{var d=document.documentElement,t=localStorage.getItem("um.theme")||"system",a=localStorage.getItem("um.accent")||"verde";if(a!=="verde"&&a!=="teal"&&a!=="grafito")a="verde";if(t!=="light"&&t!=="dark")t=window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";d.dataset.theme=t;d.dataset.accent=a;}catch(e){document.documentElement.dataset.theme="light"}})();`;
 
 export default function RootLayout({
   children,

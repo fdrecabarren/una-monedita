@@ -29,7 +29,15 @@ import {
 import { type TxFilter, EMPTY_TX_FILTER } from "@/lib/tx-filter";
 import { addInterval } from "@/lib/recurrence";
 import { fmt } from "@/lib/format";
-import { closingCutoff, carryFor, openingBalance, type CarryResult } from "@/lib/balance";
+import {
+  closingCutoff,
+  carryFor,
+  openingBalance,
+  availableFor,
+  initialForAvailable,
+  type CarryResult,
+  type Available,
+} from "@/lib/balance";
 
 // ---- UI domain types ----
 export type TxType = "expense" | "income";
@@ -100,7 +108,12 @@ export interface Notice {
   text: string;
 }
 export type DashStyle = "A" | "B" | "C";
-export type Accent = "verde" | "teal" | "bosque";
+export type Accent = "verde" | "teal" | "grafito";
+
+// "bosque" (tema retirado) y cualquier valor desconocido caen en "verde".
+export function normalizeAccent(raw: string | null): Accent {
+  return raw === "verde" || raw === "teal" || raw === "grafito" ? raw : "verde";
+}
 export type AppCurrency = "ARS" | "USD" | "EUR";
 export type Screen = "dashboard" | "movimientos" | "calendario" | "categorias" | "recurrentes" | "ajustes";
 export type Sim = "normal" | "loading" | "empty" | "error";
@@ -195,9 +208,15 @@ interface StoreValue {
   setBudget: (categoryId: string, limit: number) => Promise<void>;
   // ---- saldo acumulado ("dinero en mi poder") ----
   initialYear: number;
-  // true = cada período arranca con lo que quedó del anterior; false = solo el período.
-  carryOver: boolean;
-  setCarryOver: (v: boolean) => void;
+  // "Disponible hoy": saldo inicial + todo lo fechado hasta hoy. No depende del rango.
+  available: AvailableState;
+  // fija el Disponible de hoy en `amount` recalculando el saldo inicial (puede quedar negativo)
+  setAvailableToday: (amount: number) => Promise<void>;
+  // día de hoy (YYYY-MM-DD, local); se actualiza al volver a la app y a medianoche
+  today: string;
+  // hay movimientos todavía sin confirmar en Notion (id "tmp-")
+  hasPendingTx: boolean;
+  // saldo del período visible (solo la hoja "Tu saldo")
   carry: CarryState;
   retryHistory: () => void;
   // saldo inicial (Notion · Accounts.InitialBalance); null mientras carga
@@ -214,10 +233,14 @@ interface StoreValue {
 }
 
 export type CarryState =
-  | { status: "off" }
   | { status: "loading" }
   | { status: "error" }
   | ({ status: "ready" } & CarryResult);
+
+export type AvailableState =
+  | { status: "loading" }
+  | { status: "error" }
+  | ({ status: "ready" } & Available);
 
 export interface NewSubInput {
   name: string;
@@ -340,7 +363,8 @@ function newTempId(): string {
 }
 
 // Respuesta no-2xx de la API. `detail` es el motivo que devolvió el servidor
-// (`message` / `code` de Notion o `error`); `expired` = la sesión venció.
+// (`message` / `code` de Notion o `error`); `expired` = Notion no está conectado
+// (cualquier 401 propio; los fallos de Notion llegan como 502).
 class HttpError extends Error {
   status: number;
   detail: string | null;
@@ -357,7 +381,7 @@ function httpErrorFrom(res: Response, body: unknown): HttpError {
   const b = (body && typeof body === "object" ? body : {}) as { error?: unknown; code?: unknown; message?: unknown };
   const pick = (v: unknown) => (typeof v === "string" && v ? v : null);
   const detail = pick(b.message) ?? pick(b.code) ?? pick(b.error);
-  const expired = res.redirected || (res.status === 401 && b.error === "Sesión vencida");
+  const expired = res.status === 401;
   return new HttpError(res.status, detail, expired);
 }
 
@@ -368,7 +392,7 @@ async function httpError(res: Response): Promise<HttpError> {
 // Texto del toast: dice por qué falló en vez de un genérico.
 function failureText(err: unknown, fallback: string): string {
   if (err instanceof HttpError) {
-    if (err.expired) return "Tu sesión venció. Volvé a entrar.";
+    if (err.expired) return "Notion se desconectó. Volvé a conectar.";
     if (err.status === 429) return err.detail ?? "Demasiadas operaciones. Esperá un minuto.";
     // Notion bloquea crear páginas cuando el workspace agotó los bloques del plan gratis
     if (err.detail && /free blocks/i.test(err.detail)) {
@@ -425,10 +449,8 @@ export function StoreProvider({
   // "tiene entrada en txByYear": upsertTx puede crear un año con solo un movimiento
   // optimista, y ese año no está cargado.
   const [loadedYears, setLoadedYears] = useState<Set<number>>(() => new Set([initialYear]));
-  // Historial anterior a initialYear (saldo arrastrado). Se pide UNA vez y solo con
-  // el acumulado activo.
+  // Historial anterior a initialYear (saldo arrastrado). Se pide UNA vez.
   const [history, setHistory] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [carryOver, setCarryOverRaw] = useState(true);
   const [initialBalance, setInitialBalanceRaw] = useState<number | null>(null);
   const isLoaded = useCallback(
     (y: number) => loadedYears.has(y) || (history === "ready" && y < initialYear),
@@ -436,6 +458,9 @@ export function StoreProvider({
   );
 
   const now = new Date();
+  // Hoy (local). Se renueva al volver a la app y a medianoche: el Disponible y el
+  // contador de Fijos dependen del día, no del reloj de cada render.
+  const [today, setToday] = useState(() => toISO(new Date()));
   const [periodRaw, setPeriodRaw] = useState<Period>("Mes");
   const [anchor, setAnchor] = useState<Date>(() =>
     initialYear === now.getFullYear() ? now : new Date(initialYear, 0, 1)
@@ -463,7 +488,8 @@ export function StoreProvider({
   useEffect(() => {
     const t = (localStorage.getItem("um.theme") as Theme) || "system";
     const d = (localStorage.getItem("um.dash") as DashStyle) || "A";
-    const a = (localStorage.getItem("um.accent") as Accent) || "verde";
+    const rawAccent = localStorage.getItem("um.accent");
+    const a = normalizeAccent(rawAccent);
     const c = (localStorage.getItem("um.currency") as AppCurrency) || "EUR";
     const f = (localStorage.getItem("um.focus") as TxType) || "expense";
     const p = (localStorage.getItem("um.period") as Period) || "Mes";
@@ -471,9 +497,15 @@ export function StoreProvider({
     setThemeRaw(t);
     setDashStyleRaw(d);
     setAccentRaw(a);
+    if (rawAccent && rawAccent !== a) persist("um.accent", a);
     setCurrencyRaw(c);
     setFocusRaw(f);
-    setCarryOverRaw(localStorage.getItem("um.carry") !== "0");
+    // preferencia retirada: siempre acumulado
+    try {
+      localStorage.removeItem("um.carry");
+    } catch {
+      /* ignore */
+    }
     if (p === "Personalizado") {
       const rs = localStorage.getItem("um.rangeStart");
       const re = localStorage.getItem("um.rangeEnd");
@@ -509,6 +541,27 @@ export function StoreProvider({
     return () => mq.removeEventListener("change", apply);
   }, [prefsReady, theme, accent]);
 
+  // renueva `today` al volver a la app y a medianoche (un teléfono en el bolsillo
+  // puede pasar días sin recargar)
+  useEffect(() => {
+    const sync = () =>
+      setToday((cur) => {
+        const t = toISO(new Date());
+        return t === cur ? cur : t;
+      });
+    const onVisible = () => {
+      if (document.visibilityState === "visible") sync();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    const midnight = new Date();
+    midnight.setHours(24, 0, 1, 0);
+    const timer = setTimeout(sync, Math.max(midnight.getTime() - Date.now(), 1000));
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearTimeout(timer);
+    };
+  }, [today]);
+
   const setTheme = useCallback((v: Theme) => {
     setThemeRaw(v);
     persist("um.theme", v);
@@ -524,10 +577,6 @@ export function StoreProvider({
   const setCurrency = useCallback((v: AppCurrency) => {
     setCurrencyRaw(v);
     persist("um.currency", v);
-  }, []);
-  const setCarryOver = useCallback((v: boolean) => {
-    setCarryOverRaw(v);
-    persist("um.carry", v ? "1" : "0");
   }, []);
   const setFocus = useCallback((v: TxType) => {
     setFocusRaw(v);
@@ -620,12 +669,28 @@ export function StoreProvider({
     if (noticeTimer.current) clearTimeout(noticeTimer.current);
     setNotice(null);
   }, []);
-  // error de una mutación: muestra el motivo y, si la sesión venció, manda al login
+  // error de una mutación: muestra el motivo real (la redirección a /setup cuando
+  // Notion se desconecta la dispara apiFetch)
   const notifyFailure = useCallback(
     (err: unknown, fallback: string) => {
       console.error(err);
       showNotice(failureText(err, fallback));
-      if (err instanceof HttpError && err.expired) setTimeout(() => location.assign("/login"), 1800);
+    },
+    [showNotice]
+  );
+
+  // fetch de TODA la app: ante un 401 (Notion desconectado) avisa una sola vez y
+  // lleva a /setup. Lecturas y mutaciones pasan por acá.
+  const disconnectHandled = useRef(false);
+  const apiFetch = useCallback(
+    async (input: string, init?: RequestInit) => {
+      const res = await fetch(input, init);
+      if (res.status === 401 && !disconnectHandled.current) {
+        disconnectHandled.current = true;
+        showNotice("Notion se desconectó. Este cambio no se guardó.");
+        setTimeout(() => location.replace("/setup?reason=expired"), 1800);
+      }
+      return res;
     },
     [showNotice]
   );
@@ -644,7 +709,7 @@ export function StoreProvider({
       setLoading(true);
       const since = touchSeq.current;
       try {
-        const res = await fetch(`/api/transactions?year=${y}`);
+        const res = await apiFetch(`/api/transactions?year=${y}`);
         if (!res.ok) throw new Error(`GET /api/transactions?year=${y} → ${res.status}`);
         const data = await res.json();
         const list: Transaction[] = data.transactions || [];
@@ -661,7 +726,7 @@ export function StoreProvider({
         setLoading(false);
       }
     },
-    [isLoaded, byId]
+    [apiFetch, isLoaded, byId]
   );
 
   const navMonth = useCallback(
@@ -678,15 +743,14 @@ export function StoreProvider({
   // comparación — cubre pills fijas, navRange y el selector de rango custom.
   useEffect(() => {
     const years = new Set<number>([...yearsIn(range), ...yearsIn(prevRange)]);
-    if (carryOver) {
-      // el saldo necesita todos los años desde initialYear hasta el corte
-      const last = closingCutoff(range, new Date()).until.getFullYear();
-      for (let y = initialYear; y <= last; y++) years.add(y);
-    }
+    // el Disponible necesita todos los años desde initialYear hasta hoy (o hasta el corte del rango)
+    const nowDate = new Date();
+    const last = Math.max(nowDate.getFullYear(), closingCutoff(range, nowDate).until.getFullYear());
+    for (let y = initialYear; y <= last; y++) years.add(y);
     years.forEach((y) => {
       if (!isLoaded(y)) void ensureYear(y);
     });
-  }, [range, prevRange, carryOver, initialYear, isLoaded, ensureYear]);
+  }, [range, prevRange, initialYear, isLoaded, ensureYear]);
 
   // rango visible con años todavía sin traer: evita mostrar un "Sin movimientos" falso
   const rangePending = useMemo(() => yearsIn(range).some((y) => !isLoaded(y)), [range, isLoaded]);
@@ -695,7 +759,7 @@ export function StoreProvider({
   // definición del schema de Notion — no siguen al rango del Resumen).
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/budgets?year=${year}&month=${month + 1}`)
+    apiFetch(`/api/budgets?year=${year}&month=${month + 1}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`GET /api/budgets → ${res.status}`))))
       .then((data: { budgets: Budget[] }) => {
         if (!cancelled) setBudgets(data.budgets.map(budgetToUI));
@@ -704,13 +768,13 @@ export function StoreProvider({
     return () => {
       cancelled = true;
     };
-  }, [year, month]);
+  }, [apiFetch, year, month]);
 
   const setBudget = useCallback<StoreValue["setBudget"]>(
     async (categoryId, limit) => {
       const existing = budgets.find((b) => b.categoryId === categoryId);
       if (existing) {
-        const res = await fetch(`/api/budgets/${existing.id}`, {
+        const res = await apiFetch(`/api/budgets/${existing.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ limit }),
@@ -720,7 +784,7 @@ export function StoreProvider({
         setBudgets((list) => list.map((b) => (b.id === existing.id ? budgetToUI(updated) : b)));
       } else {
         const catName = byId[categoryId]?.name ?? "Presupuesto";
-        const res = await fetch("/api/budgets", {
+        const res = await apiFetch("/api/budgets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -736,7 +800,7 @@ export function StoreProvider({
         setBudgets((list) => [...list, budgetToUI(created)]);
       }
     },
-    [budgets, byId, currency, anchor]
+    [apiFetch, budgets, byId, currency, anchor]
   );
 
   const visibleTx = useMemo(() => {
@@ -801,7 +865,7 @@ export function StoreProvider({
     setHistory("loading");
     const since = touchSeq.current;
     try {
-      const res = await fetch(`/api/transactions/history?before=${initialYear}-01-01`);
+      const res = await apiFetch(`/api/transactions/history?before=${initialYear}-01-01`);
       if (!res.ok) throw await httpError(res);
       const data = await res.json();
       const list: Transaction[] = data.transactions ?? [];
@@ -829,13 +893,13 @@ export function StoreProvider({
       console.error(err);
       setHistory("error");
     }
-  }, [initialYear, byId]);
+  }, [apiFetch, initialYear, byId]);
 
-  // una sola llamada, y solo con el acumulado activo
+  // una sola llamada
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- dispara el fetch del historial (sistema externo)
-    if (prefsReady && carryOver && !initialLoadError && history === "idle") void loadHistory();
-  }, [prefsReady, carryOver, initialLoadError, history, loadHistory]);
+    if (prefsReady && !initialLoadError && history === "idle") void loadHistory();
+  }, [prefsReady, initialLoadError, history, loadHistory]);
 
   // saldo inicial: una vez al montar. Si el workspace no tiene base Accounts (400)
   // no hay nada que leer y vale 0; cualquier otro fallo es un error visible (no un
@@ -845,7 +909,7 @@ export function StoreProvider({
   useEffect(() => {
     if (!prefsReady || initialLoadError) return;
     let cancelled = false;
-    fetch("/api/accounts/opening")
+    apiFetch("/api/accounts/opening")
       .then(async (res) => {
         if (res.status === 400) return { initialBalance: 0 };
         if (!res.ok) throw await httpError(res);
@@ -863,7 +927,7 @@ export function StoreProvider({
     return () => {
       cancelled = true;
     };
-  }, [prefsReady, initialLoadError, openingAttempt]);
+  }, [apiFetch, prefsReady, initialLoadError, openingAttempt]);
 
   const retryHistory = useCallback(() => {
     setHistory((h) => (h === "error" ? "idle" : h));
@@ -874,34 +938,55 @@ export function StoreProvider({
   }, [initialBalanceError]);
 
   const setInitialBalance = useCallback<StoreValue["setInitialBalance"]>(async (n) => {
-    const res = await fetch("/api/accounts/opening", {
+    const res = await apiFetch("/api/accounts/opening", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ initialBalance: n }),
     });
     if (!res.ok) throw await httpError(res);
     setInitialBalanceRaw(n);
-  }, []);
+  }, [apiFetch]);
 
   // Años completos desde initialYear hasta `lastYear` (y el historial anterior).
   const ledgerReady = useCallback(
     (lastYear: number) => {
-      if (!carryOver || initialLoadError || history !== "ready" || initialBalance === null) return false;
+      if (initialLoadError || history !== "ready" || initialBalance === null) return false;
       for (let y = initialYear; y <= lastYear; y++) if (!isLoaded(y)) return false;
       return true;
     },
-    [carryOver, initialLoadError, history, initialBalance, initialYear, isLoaded]
+    [initialLoadError, history, initialBalance, initialYear, isLoaded]
   );
 
+  // Disponible hoy: independiente del rango que se esté mirando.
+  const available = useMemo<AvailableState>(() => {
+    if (initialLoadError || history === "error" || initialBalanceError) return { status: "error" };
+    const day = parseDate(today);
+    if (!ledgerReady(day.getFullYear())) return { status: "loading" };
+    return { status: "ready", ...availableFor(allTx, day, initialBalance ?? 0) };
+  }, [initialLoadError, history, initialBalanceError, today, ledgerReady, allTx, initialBalance]);
+
+  const hasPendingTx = useMemo(() => allTx.some((t) => t.id.startsWith("tmp-")), [allTx]);
+
+  // "¿Cuánta plata tenés hoy?": recalcula el saldo inicial para que el Disponible de
+  // hoy sea `amount` (con lo que ya está registrado). Nunca con datos a medias.
+  const setAvailableToday = useCallback<StoreValue["setAvailableToday"]>(
+    async (amount) => {
+      if (available.status !== "ready") throw new Error("Todavía se está calculando tu saldo.");
+      if (allTx.some((t) => t.id.startsWith("tmp-"))) throw new Error("Esperá a que se guarde el último movimiento.");
+      await setInitialBalance(initialForAvailable(allTx, amount, parseDate(today)));
+    },
+    [available.status, allTx, today, setInitialBalance]
+  );
+
+  // Saldo del período visible (hoja "Tu saldo").
   const carry = useMemo<CarryState>(() => {
-    if (!carryOver || sim !== "normal") return { status: "off" };
     if (initialLoadError || history === "error" || initialBalanceError) return { status: "error" };
     const now = new Date();
     const last = closingCutoff(range, now).until.getFullYear();
     if (!ledgerReady(last)) return { status: "loading" };
     if (yearsIn(range).some((y) => !isLoaded(y))) return { status: "loading" };
     return { status: "ready", ...carryFor(allTx, range, now, initialBalance ?? 0) };
-  }, [carryOver, sim, initialLoadError, history, initialBalanceError, range, ledgerReady, isLoaded, allTx, initialBalance]);
+  }, [initialLoadError, history, initialBalanceError, range, ledgerReady, isLoaded, allTx, initialBalance]);
 
   const balanceBefore = useCallback(
     (date: Date): number | null => {
@@ -963,7 +1048,7 @@ export function StoreProvider({
         transfer: false,
         currency,
       });
-      void fetch("/api/transactions", {
+      void apiFetch("/api/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -988,7 +1073,7 @@ export function StoreProvider({
           notifyFailure(err, "No se pudo guardar el movimiento");
         });
     },
-    [byId, upsertTx, removeTx, currency, notifyFailure, showNotice]
+    [apiFetch, byId, upsertTx, removeTx, currency, notifyFailure, showNotice]
   );
 
   const updateTransaction = useCallback<StoreValue["updateTransaction"]>(
@@ -1015,7 +1100,7 @@ export function StoreProvider({
         body.categoryId = patch.cat;
         body.type = byId[patch.cat]?.type === "income" ? "Ingreso" : "Gasto";
       }
-      void fetch(`/api/transactions/${id}`, {
+      void apiFetch(`/api/transactions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1033,14 +1118,14 @@ export function StoreProvider({
           notifyFailure(err, "No se pudieron guardar los cambios");
         });
     },
-    [byId, findTx, removeTx, upsertTx, notifyFailure]
+    [apiFetch, byId, findTx, removeTx, upsertTx, notifyFailure]
   );
 
   const deleteTransaction = useCallback<StoreValue["deleteTransaction"]>(
     async (id) => {
       const prev = findTx(id);
       removeTx(id);
-      void fetch(`/api/transactions/${id}`, { method: "DELETE" })
+      void apiFetch(`/api/transactions/${id}`, { method: "DELETE" })
         .then(async (res) => {
           if (!res.ok) throw await httpError(res);
         })
@@ -1049,12 +1134,12 @@ export function StoreProvider({
           notifyFailure(err, "No se pudo eliminar el movimiento");
         });
     },
-    [findTx, removeTx, upsertTx, notifyFailure]
+    [apiFetch, findTx, removeTx, upsertTx, notifyFailure]
   );
 
   const addCategory = useCallback<StoreValue["addCategory"]>(
     async ({ name, type, icon, color }) => {
-      const res = await fetch("/api/categories", {
+      const res = await apiFetch("/api/categories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1070,7 +1155,7 @@ export function StoreProvider({
       setCategories((list) => [...list, ui]);
       return ui.id;
     },
-    []
+    [apiFetch]
   );
 
   const updateCategory = useCallback<StoreValue["updateCategory"]>(
@@ -1080,7 +1165,7 @@ export function StoreProvider({
       if (patch.icon != null) body.icon = patch.icon;
       if (patch.color != null) body.color = patch.color;
       if (patch.type) body.kind = patch.type === "income" ? "Ingreso" : "Gasto";
-      const res = await fetch(`/api/categories/${id}`, {
+      const res = await apiFetch(`/api/categories/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1090,22 +1175,22 @@ export function StoreProvider({
       const ui = catToUI(updated);
       setCategories((list) => list.map((c) => (c.id === id ? ui : c)));
     },
-    []
+    [apiFetch]
   );
 
   const deleteCategory = useCallback<StoreValue["deleteCategory"]>(
     async (id) => {
-      const res = await fetch(`/api/categories/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/categories/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("delete category failed");
       setCategories((list) => list.filter((c) => c.id !== id));
     },
-    []
+    [apiFetch]
   );
 
   // ---- subscriptions (recurrentes) mutations ----
   const addSubscription = useCallback<StoreValue["addSubscription"]>(
     async (input) => {
-      const res = await fetch("/api/subscriptions", {
+      const res = await apiFetch("/api/subscriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1126,7 +1211,7 @@ export function StoreProvider({
       const created: Subscription = await res.json();
       setSubscriptions((list) => [...list, subToUI(created)]);
     },
-    []
+    [apiFetch]
   );
 
   const updateSubscriptionFn = useCallback<StoreValue["updateSubscription"]>(
@@ -1144,7 +1229,7 @@ export function StoreProvider({
       if (patch.status) body.status = patch.status;
       if (patch.cat !== undefined) body.categoryId = patch.cat ?? undefined;
       if (patch.notes !== undefined) body.notes = patch.notes;
-      const res = await fetch(`/api/subscriptions/${id}`, {
+      const res = await apiFetch(`/api/subscriptions/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -1153,16 +1238,16 @@ export function StoreProvider({
       const updated: Subscription = await res.json();
       setSubscriptions((list) => list.map((s) => (s.id === id ? subToUI(updated) : s)));
     },
-    []
+    [apiFetch]
   );
 
   const deleteSubscriptionFn = useCallback<StoreValue["deleteSubscription"]>(
     async (id) => {
-      const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`/api/subscriptions/${id}`, { method: "DELETE" });
       if (!res.ok) throw await httpError(res);
       setSubscriptions((list) => list.filter((s) => s.id !== id));
     },
-    []
+    [apiFetch]
   );
 
   const subPayments = useCallback<StoreValue["subPayments"]>(
@@ -1204,7 +1289,7 @@ export function StoreProvider({
       setSubscriptions((list) => list.map((s) => (s.id === prev.id ? optimisticSub : s)));
 
       try {
-        const res = await fetch(`/api/subscriptions/${prev.id}/pay`, {
+        const res = await apiFetch(`/api/subscriptions/${prev.id}/pay`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1236,7 +1321,7 @@ export function StoreProvider({
         notifyFailure(err, "No se pudo registrar el pago");
       }
     },
-    [subscriptions, byId, upsertTx, removeTx, showNotice, notifyFailure]
+    [apiFetch, subscriptions, byId, upsertTx, removeTx, showNotice, notifyFailure]
   );
 
   const value: StoreValue = {
@@ -1298,8 +1383,10 @@ export function StoreProvider({
     budgets,
     setBudget,
     initialYear,
-    carryOver,
-    setCarryOver,
+    available,
+    setAvailableToday,
+    today,
+    hasPendingTx,
     carry,
     retryHistory,
     initialBalance,

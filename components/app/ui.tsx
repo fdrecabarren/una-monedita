@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type KeyboardEvent, type ReactNode } from "react";
-import { useStore, type Period, type TxType } from "./store";
+import { useContext, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useStore, type Period } from "./store";
 import { Icon } from "./Icon";
 import { RangeModal } from "./modal-range";
-import { fmt } from "@/lib/format";
+import { DonutInner } from "./Donut";
+import { fmt, fmtShort, fitFontSize } from "@/lib/format";
 
 export const MONTHS = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
 export const MONTHS_FULL = [
@@ -118,23 +119,6 @@ export function Segmented<T extends string>({
   return <SegmentedControl<T> label={label} options={options} value={value} onChange={onChange} stretch />;
 }
 
-// FocusToggle: alterna el foco del Resumen entre Gastos e Ingresos. Misma
-// pastilla neutra que el resto; un punto de color indica el tipo.
-export function FocusToggle() {
-  const { focus, setFocus } = useStore();
-  return (
-    <SegmentedControl<TxType>
-      label="Mostrar"
-      options={[
-        { value: "expense", label: "Gastos", dot: "var(--expense-fill)" },
-        { value: "income", label: "Ingresos", dot: "var(--income-fill)" },
-      ]}
-      value={focus}
-      onChange={setFocus}
-    />
-  );
-}
-
 export function MonthNav({ center = true }: { center?: boolean }) {
   const { month, year, navMonth } = useStore();
   return (
@@ -183,16 +167,39 @@ export function RangeNav({ center = true }: { center?: boolean }) {
 
 // Centro del donut: lo que suma el anillo (gastos o ingresos del foco), sin
 // repetir el saldo: el Disponible vive en un solo lugar (Monedero / BalanceCard).
+// La cifra se ajusta al hueco del anillo (DonutInner); si ni así entra legible,
+// muestra la versión corta (€ 12k) y deja el monto completo para lectores de pantalla.
 export function CenterBalance({ scale = 1 }: { scale?: number }) {
   const { totals, currency, focus, rangeLabel } = useStore();
+  const avail = useContext(DonutInner) ?? 160;
   const isExpense = focus === "expense";
+  const amount = isExpense ? totals.expense : totals.income;
+  const fullText = fmt(amount, currency);
+  const maxPx = 34 * scale;
+  const fullSize = fitFontSize(fullText, avail, maxPx, 12);
+  const useShort = fullSize < 14;
+  const shortText = fmtShort(amount, currency);
+  const size = useShort ? fitFontSize(shortText, avail, maxPx, 12) : fullSize;
+  const caption = rangeLabel.toLowerCase();
   return (
     <div>
       <div className="eyebrow" style={{ color: "var(--text-2)" }}>{isExpense ? "Gastos" : "Ingresos"}</div>
-      <div className="num" style={{ fontSize: 34 * scale, fontWeight: 600, lineHeight: 1.04, color: "var(--text)", marginTop: 2 }}>
-        {fmt(isExpense ? totals.expense : totals.income, currency)}
+      <div className="num" style={{ fontSize: size, fontWeight: 600, lineHeight: 1.04, color: "var(--text)", marginTop: 2, whiteSpace: "nowrap" }}>
+        {useShort ? (
+          <>
+            <span aria-hidden="true">{shortText}</span>
+            <span className="sr-only">{fullText}</span>
+          </>
+        ) : (
+          fullText
+        )}
       </div>
-      <div className="caption" style={{ marginTop: 4 }}>{rangeLabel.toLowerCase()}</div>
+      <div
+        className="caption"
+        style={{ marginTop: 4, fontSize: fitFontSize(caption, avail, 13, 11, 0.55), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+      >
+        {caption}
+      </div>
     </div>
   );
 }
