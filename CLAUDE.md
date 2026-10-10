@@ -11,7 +11,7 @@ App de finanzas personales de Franco Recabarren. Registra gastos e ingresos en N
 - Next.js 16 (App Router), TypeScript, Tailwind v4, pnpm
 - Notion como base de datos (workspace "Notion de Franco Recabarren")
 - Integración Notion: "UNA MONEDITA"
-- jose (JWT auth), zod v4
+- jose (cookie cifrada JWE con la conexión a Notion), zod v4
 - **lucide-react** (iconos — estilo Monefy, NO Phosphor)
 - Vercel deployment (proyecto `una-monedita`, team `franco-s-projects02`, user `francorecabarren-8052`; projectId `prj_KtMp6hZWEoPSIcVIKI1kiEZuIEsz`)
 
@@ -22,14 +22,15 @@ Reemplaza al viejo minimalist-ui. Definido en `app/globals.css` con CSS vars por
 - Modales: todos usan `components/app/Sheet.tsx` (`role="dialog"`, foco que entra y vuelve, trap de Tab, Escape) + `SheetHeader` + `ConfirmRow` (confirmación destructiva dentro del sheet). Nunca dos sheets apilados.
 - Avisos: `Toast` (ui.tsx) dentro del Shell; `notice = { kind: "error" | "success", text }`; los errores no se cierran solos, los éxitos a los 2.5 s.
 - Fuentes: **Nunito** (`--font-app`, UI), **Fraunces** variable con ejes SOFT/opsz (`--font-serif`, números display `.num`; `.num-coin` = cifras redondas, solo para el Disponible). Nunca Fraunces por encima de 600.
-- **Un color = un significado** (tokens en `app/globals.css`): `--accent*` (botón primario, nav activa, anillo "hoy", foco; cambia con `[data-accent]` verde/teal/bosque), `--income*` (ingresos, fijo), `--expense*` (gastos, fijo), `--warn` (presupuesto al 80%), `--on-accent/--on-income/--on-expense` (texto sobre rellenos). Texto de ingreso/gasto usa `--income`/`--expense` (AA); `--income-fill`/`--expense-fill` son solo rellenos y barras. No usar `#fff` fijo ni `--green`/`--red` (ya no existen).
+- **Un color = un significado** (tokens en `app/globals.css`): `--accent*` (botón primario, nav activa, anillo "hoy", foco; cambia con `[data-accent]` verde/teal/grafito), `--income*` (ingresos, fijo), `--expense*` (gastos, fijo), `--warn` (presupuesto al 80%), `--on-accent/--on-income/--on-expense` (texto sobre rellenos). Texto de ingreso/gasto usa `--income`/`--expense` (AA); `--income-fill`/`--expense-fill` son solo rellenos y barras. No usar `#fff` fijo ni `--green`/`--red` (ya no existen).
 - Tema: `Theme = "system" | "light" | "dark"` (default `system`). El tema resuelto y el acento viven en `<html data-theme data-accent>`; un script en `app/layout.tsx` los escribe antes del primer paint y el store los mantiene. Los tokens están en `:root` + `[data-theme]` para que resuelvan fuera de `.app-root`.
 - Escala: radios `--r-sm/md/lg/xl/pill` (8/12/16/22/999); `.card` / `.card-hero` (única receta de tarjeta, con borde); `.eyebrow`, `.caption`, `.amount`, `.sheet-title`, `.sr-only`; foco visible global (`:focus-visible`), `.field-wrap` para inputs sin borde propio; `prefers-reduced-motion` respetado. Texto mínimo 11px, objetivos táctiles 44px.
 - Paleta categorías `--cat-*`; el glifo de `CatBubble` se mezcla con `--text` (`--glyph-mix`) para contraste.
 - Iconos: **lucide-react** vía `lib/icon-registry.ts` (registro explícito ~180 nombres, tree-shaken) + `components/app/Icon.tsx`.
 - Categorías guardan `Icon` (nombre Lucide PascalCase) + `Color` (hex) en Notion.
 - Tienda de Iconos: catálogo en `lib/icon-catalog.ts` (`GROUPS`, `COLORS`, `ALL`).
-- Preferencias (theme/dashStyle/accent/currency/focus/period/carry) persisten en localStorage (`um.theme/um.dash/um.accent/um.currency/um.focus/um.period/um.carry`).
+- **Grafito:** tema en escala de grises (`[data-theme="light"|"dark"][data-accent="grafito"]` en `globals.css`, especificidad 0,2,0). Reemplaza fondos, texto y acento por grises neutros; `--income*`, `--expense*`, `--warn` y `--cat-*` no se tocan. El acento viejo "bosque" ya no existe: `normalizeAccent` (store) y el script de `layout.tsx` lo migran a "verde".
+- Preferencias (theme/dashStyle/accent/currency/focus/period) persisten en localStorage (`um.theme/um.dash/um.accent/um.currency/um.focus/um.period`). `um.carry` ya no existe (el saldo siempre es acumulado; el store lo borra).
 
 ## Notion — IDs y caveats críticos
 
@@ -43,8 +44,8 @@ NOTION_DB_BUDGETS=36d5c48e-39b6-81b5-be41-ed826914438b
 NOTION_DB_FX_RATES=36d5c48e-39b6-8195-b489-d81b1bd2b9c8
 ```
 
-`NOTION_TOKEN` NO va acá en texto plano — vive solo en `.env.local` / env vars de
-Vercel. Esquema completo de las 6 bases (props, tipos, valores válidos, ejemplos
+`NOTION_TOKEN` NO va acá en texto plano — vive solo en `.env.local` (desarrollo en
+localhost). En Vercel NO se define: cada persona conecta su Notion en `/setup`. Esquema completo de las 6 bases (props, tipos, valores válidos, ejemplos
 de payload) documentado para agentes en [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md)
 y espejado como página "📖 Guía del sistema (para agentes)" dentro de la página
 principal de Notion (publicada por `scripts/publish-notion-guide.ts`).
@@ -57,34 +58,37 @@ principal de Notion (publicada por `scripts/publish-notion-guide.ts`).
 - `pages.update` con `in_trash: true` para borrar
 - **Límite de bloques del plan gratis:** si el workspace agota sus bloques, Notion responde `403 restricted_resource` ("This workspace has used all of its free blocks") a todo `pages.create` (gastos, fijos, categorías) pero las lecturas y los `pages.update` siguen andando. En la app se ve como "Notion no deja crear más…". Se arregla en Notion (revisar el uso del plan del workspace, liberar espacio o mejorar el plan), no con código.
 
-## Auth
+## Auth (sin contraseña: conectar Notion es el ingreso)
 
-- Cookie: `um_session` (JWT firmado con `AUTH_COOKIE_SECRET`)
-- Proxy auth: `proxy.ts` en raíz (Next.js 16 usa `proxy.ts`, NO `middleware.ts`)
-- La función debe exportarse como `proxy` (no `middleware`)
-- Rutas públicas: `/login`, `/api/auth`, `/api/seed`
-- `/api/*` sin sesión válida responde `401 {error:"Sesión vencida"}` (JSON, sin redirect); las páginas sí redirigen a `/login`
-- Fallos de Notion en las rutas de la API → `502 {error, code, message}` vía `lib/notion/errors.ts` `notionErrorResponse()` (loguea `[op] failed:` en Vercel Logs). Las credenciales de env/sesión se `.trim()`-ean en `lib/auth/session.ts`
+- No hay `APP_PASSWORD` ni login. La única credencial es la cookie **`__Host-um_notion`** (producción) / `um_notion` (desarrollo): JWE `dir`/`A256GCM` con el token de Notion y los 6 IDs de bases, clave = SHA-256(`"um_notion:v1:" + AUTH_COOKIE_SECRET`), audiencia `um_notion`. `httpOnly`, `SameSite=Lax`, `Secure` + prefijo `__Host-` en producción. "Recordar en este dispositivo" = 400 días; sin recordar, cookie de sesión del navegador y vence a las 24 h. El servidor no guarda nada.
+- Cada dispositivo/persona trae su propia cookie y ve solo su Notion: una instalación puede servir a varias personas. `lib/notion/*` exige `creds: NotionCreds` en cada llamada y **nunca** cae a variables de entorno.
+- Código: `lib/auth/session.ts` (cookie, `resolveNotionCreds(cookieHeader, host)`, `getNotionCredsFromRequest`, `getConfigStatus`, `secretProblem`, `devAuthBypass`), `lib/auth/csrf.ts` (`csrfVerdict`, puro), `lib/auth/rate-limit.ts`.
+- Proxy (`proxy.ts` en raíz; Next.js 16 usa `proxy.ts`, NO `middleware.ts`, y se exporta como `proxy`). Orden: (1) `secretProblem()` → 503; (2) **CSRF de `/api/*` antes de todo lo demás**; (3) bypass de desarrollo; (4) públicas por igualdad exacta: `/setup` y `/api/setup`; (5) atajos de compatibilidad: `/login` redirige, `/api/auth` DELETE 200 / POST 410 (**TODO 2026-11-15: borrar**); (6) cookie válida → pasa; (7) migración de la cookie vieja `um_session` (reescribe el header Cookie del pedido y setea la nueva); (8) sin credenciales: páginas → `/setup?reason=missing|expired`, API → `401 { error:"Notion no conectado", code:"notion_disconnected" }`.
+- CSRF (necesario porque `/api/setup` es público y las cookies son `SameSite=Lax`): a `/api/*` no se llega navegando cross-site; las escrituras exigen `Sec-Fetch-Site: same-origin` y `Origin` = host (https en producción, `Origin: null` bloqueado); POST/PUT/PATCH exigen `Content-Type: application/json` (415). Todo `fetch` de escritura del cliente debe mandar ese header (también `body: "{}"` en POST sin cuerpo).
+- `/api/setup` POST: valida el token (`users/me`), busca las 6 bases hijas de la página, límite 10 intentos / 15 min por IP, setea la cookie. DELETE: la borra (idempotente). `/api/me` → `{ connected, via: "cookie"|"legacy"|"dev"|null, remember }`.
+- **Desarrollo local:** `devAuthBypass(host)` exige `NODE_ENV=development` + `DEV_AUTH_BYPASS=1` + host `localhost`/`127.0.0.1`/`[::1]`; entonces usa las credenciales de `.env.local`. Nunca definir `DEV_AUTH_BYPASS` ni `NOTION_*` en Vercel.
+- Cliente: cualquier 401 de la API (`HttpError.expired`) = sin conexión; `apiFetch` (store) avisa una vez y hace `location.replace("/setup?reason=expired")`. La página del dashboard redirige a `/setup?reason=revoked` si Notion rechaza el token.
+- `AUTH_COOKIE_SECRET` es la única variable obligatoria (≥ 32 caracteres, distinta del ejemplo). Si cambia, todos los dispositivos se desconectan. Fallos de Notion en la API → `502 {error, code, message}` vía `lib/notion/errors.ts` `notionErrorResponse()` (loguea `[op] failed:`; un `unauthorized` de Notion responde `401 notion_token_invalid`). Las credenciales se `.trim()`-ean.
 
 ## Estructura de páginas
 
-SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicial → client). Navegación entre pantallas es interna por store (`screen`), NO por rutas. `app/(app)/page.tsx` redirige a `/dashboard`. `/login` aparte.
+SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicial → client). Navegación entre pantallas es interna por store (`screen`), NO por rutas. `app/(app)/page.tsx` redirige a `/dashboard`. `/setup` aparte (pública: conectar Notion; estado, motivo, "Recordar", llavero).
 
 | Pantalla (interna) | Estado |
 |------|--------|
 | Resumen (donut A/B/C) | ✅ |
 | Movimientos (agrupado + edición) | ✅ |
 | Calendario (grilla + detalle día) | ✅ |
-| Fijos / recurrentes (lista única compacta + ✓ Registrar pago) | ✅ |
+| Fijos / recurrentes (lista única compacta + ✓ Registrar pago + contador mensual) | ✅ |
 | Categorías (CRUD + Tienda Iconos) | ✅ |
-| Ajustes (tema/acento/dashStyle/logout) | ✅ |
+| Ajustes (moneda, saldo "¿Cuánta plata tenés hoy?", tema, color Verde/Turquesa/Grafito, dashStyle, Notion: cambiar/desconectar, mantenimiento) | ✅ |
 
 ## API Routes
 
 | Ruta | Método | Función |
 |------|--------|---------|
-| `/api/auth` | POST/DELETE | Login / Logout (cookie JWT) |
-| `/api/seed` | GET | Seedea set diseño si vacío; `?reset=1` archiva todo + reseedea |
+| `/api/setup` | POST/DELETE | Conecta Notion (cookie cifrada; `remember`) / desconecta este dispositivo. Pública, con CSRF y límite de intentos |
+| `/api/seed` | POST | Seedea set diseño si vacío; `?reset=1` archiva todo + reseedea (POST + JSON: no se dispara con un link) |
 | `/api/transactions` | GET | Lista por año (`?year=YYYY`, paginado) |
 | `/api/transactions` | POST | Crea transacción |
 | `/api/transactions/[id]` | PATCH/DELETE | Edita / borra (`in_trash`) |
@@ -100,8 +104,8 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 | `/api/budgets` | GET | Lista presupuestos del mes (`?year=YYYY&month=1-12`) |
 | `/api/budgets` | POST | Crea presupuesto (name, limit, currency, month, categoryId?) |
 | `/api/budgets/[id]` | PATCH | Edita límite / recurring / alertAt80 |
-| `/api/notion/guide` | POST | Publica `docs/NOTION-SCHEMA.md` como subpágina "📖 Guía del sistema" en Notion (creds de sesión) |
-| `/api/me` | GET | Estado de config Notion; `?full=1` además resuelve los 6 DB IDs + página padre |
+| `/api/notion/guide` | POST | Publica `docs/NOTION-SCHEMA.md` como subpágina "📖 Guía del sistema" en Notion (creds de la conexión) |
+| `/api/me` | GET | Estado de la conexión `{ connected, via, remember }`; `?full=1` además resuelve los 6 DB IDs + página padre |
 
 ## Gastos/ingresos fijos (recurrentes)
 
@@ -110,7 +114,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   Esquema completo → [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md#subscriptions-gastosingresos-recurrentes--fijos-en-la-app).
 - `DueDay` (1–31): día objetivo del mes; si no existe en el mes (31 en
   febrero) se clampea al último día — nunca salta de mes. Lógica en
-  `lib/recurrence.ts`.
+  `lib/recurrence.ts` (`addInterval` / `subtractInterval`).
 - **Sin registro automático ni cron.** Un fijo es una plantilla: solo se
   convierte en Transaction cuando el usuario toca el ✓ "Registrar pago" de su
   fila (el día que paga o le debitan). Ese botón abre el mismo modal calculadora
@@ -123,9 +127,16 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   `addInterval`); si hay varios períodos atrasados, cada uno se registra por
   separado. Lógica compartida en `lib/notion/payments.ts` `chargeSubscription()`.
 - Pantalla Fijos: una sola lista (activos por vencimiento, pausados al final,
-  cancelados ocultos). Cada fila muestra "Pendiente · vence X" (vencido o vence
-  hoy), "Pagado <fecha del último pago>" o "Próximo X", y el ✓ Registrar pago.
-  Encabezado: estimado mensual + contador "N/M pagados".
+  cancelados ocultos). El estado de cada fila es **del mes en curso**
+  (`monthStatus` en `lib/recurrence.ts`, con `today` del store): "Vence 26 oct",
+  "Pendiente · vence hoy", "Pendiente · venció 26 sep", "Pagado 28 sep"
+  (ingresos: "Cobrado"), "Próximo 15 mar" (no le toca este mes: anual, etc.) y
+  "Pausado". El ✓ Registrar pago se destaca cuando hay algo para registrar.
+  Encabezado: estimado mensual + contador **"N/M pagados"** = `monthCounter`
+  (solo activos a los que les toca este mes). **Vuelve a 0 al cambiar de mes**
+  porque se calcula contra el mes calendario, no contra "alguna vez se pagó".
+  Limitación aceptada: Diaria/Semanal/Personalizada corta quedan "Vence" casi
+  todo el mes (Notion guarda un solo próximo vencimiento).
 - Editor de fijo (`modal-recurrente.tsx`): Tipo, Nombre, Monto, Categoría,
   Frecuencia, Día del mes (o cada N días si Personalizada). Un fijo nuevo arranca
   hoy y su primer vencimiento se deriva del día del mes.
@@ -138,7 +149,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   Subscriptions si faltan; idempotente).
 - La guía para agentes (Hermes) se publica/actualiza desde Ajustes →
   Mantenimiento → **Publicar guía para agentes** (`POST /api/notion/guide`,
-  usa las creds de la sesión logueada — no requiere `NOTION_TOKEN` local).
+  usa las creds de la conexión de este dispositivo — no requiere `NOTION_TOKEN`).
   Fuente: [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md).
 
 ## Resumen por rango de fechas
@@ -154,23 +165,27 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 - `visibleTx`/`totals` ya filtran por `range` en vez de mes fijo — cubre
   rangos que cruzan de año (`yearsIn(range)` dispara el fetch de cada año que
   falte). `prevRange`/`prevTotals` = mismo largo, tramo anterior — alimentan
-  la comparativa (`ComparativeStats`) y el mini-gráfico de tendencia
-  (`TrendBars.tsx`, baldes vía `bucketsFor(range)`).
+  la comparativa (`ComparativeStats`). El gráfico de tendencia (`TrendBars`) se
+  eliminó. `bucketsFor(range, unit)` se usa en el desglose de "Tu saldo".
+- **Tira del período** (`PeriodSummary` en `balance.tsx`): Ingresos | Gastos |
+  Balance del rango visible; Ingresos y Gastos son además el selector de foco del
+  donut (radiogroup). Móvil: debajo del selector de período; desktop: columna
+  derecha del hero.
 
-## Saldo acumulado ("dinero en mi poder")
+## Saldo ("dinero en mi poder")
 
-- Glosario (usar tal cual en la UI): **Balance diario/semanal/mensual/anual/del período** = ingresos − gastos del rango. **Saldo anterior** = saldo inicial + todo lo anterior al rango. **Disponible** = saldo anterior + balance del período, contado hasta hoy ("Disponible hoy" si el rango contiene hoy; "Saldo al 30 sep" si ya pasó; "Saldo previsto" si es futuro). Nunca usar "Saldo" y "Balance" para el mismo número.
-- Lógica pura en `lib/balance.ts` (`netBetween`, `openingBalance`, `closingCutoff`, `carryFor`, `balanceSeries`) + `balanceLabel`/`bucketsFor(range, unit)` en `lib/date-range.ts`. Tests: `scripts/test-balance.ts` (compilar con `tsc` + node; no hace falta instalar `tsx`).
-- Preferencia `carryOver` (`um.carry`, default Acumulado) en Ajustes → "Saldo": **Solo del período** (como antes) o **Acumulado**. Con Acumulado el store pide UNA vez `/api/transactions/history?before=<initialYear>-01-01` y deriva `carry` (`off | loading | error | ready`). Nunca se muestra una suma parcial: mientras faltan años, `loading`.
-- Cache por año: `loadedYears` (no `txByYear[y]`: `upsertTx` puede crear un año con solo un movimiento optimista). Al llegar un año se conservan los optimistas `tmp-`. `rangePending` evita el "Sin movimientos" falso mientras carga un año.
-- Saldo inicial: `Accounts.InitialBalance` vía `/api/accounts/opening`; en Ajustes se edita a mano o "Calcularlo desde lo que tengo hoy". Las transferencias no cuentan en totales ni saldo. La app no convierte monedas: el saldo suma todo sin conversión (la hoja "Tu saldo" avisa si se mezclan).
-- UI en `components/app/balance.tsx`: `Monedero` (barra inferior móvil, siempre visible), `BalanceCard` (hero desktop), `BalanceSheet` ("Tu saldo": ecuación + desglose por día/semana/mes). Firma visual: `Coin.tsx` (la monedita; con brote si el balance del período es positivo) solo junto al Disponible. Calendario: balance mensual, balance del día y saldo al cierre.
+- Glosario (usar tal cual en la UI): **Disponible hoy** = saldo inicial + ingresos − gastos de todo lo fechado hasta hoy; es el número grande y **no depende del rango** que se mira (no cambia al navegar meses). **Balance diario/semanal/mensual/anual/del período** = ingresos − gastos del rango. **Saldo al inicio** = saldo inicial + todo lo anterior al rango (reemplaza a "Saldo anterior"). **Saldo hoy / Saldo al 30 sep / Saldo previsto** = saldo al inicio + balance del período contado hasta el corte (solo en la hoja "Tu saldo"). Nunca usar "Saldo" y "Balance" para el mismo número.
+- Lógica pura en `lib/balance.ts` (`availableFor`, `initialForAvailable`, `netBetween`, `openingBalance`, `closingCutoff`, `carryFor`, `balanceSeries`) + `balanceLabel`/`bucketsFor(range, unit)` en `lib/date-range.ts`. Tests: `scripts/test-balance.ts` (compilar con `tsc` + node; ver README, sección Tests).
+- **Siempre acumulado** (se eliminó la preferencia `carryOver`/`um.carry`). El store pide UNA vez `/api/transactions/history?before=<initialYear>-01-01` y carga los años desde `initialYear` hasta hoy; `available` (`loading | error | ready`) nunca muestra una suma parcial. `today` (store) se renueva al volver a la app y a medianoche.
+- **Saldo inicial:** `Accounts.InitialBalance` vía `/api/accounts/opening`. Ya NO se edita a mano: Ajustes → Saldo → "¿Cuánta plata tenés hoy? (efectivo + banco)" llama `setAvailableToday(monto)`, que guarda `initialForAvailable(allTx, monto, hoy)` = monto − neto de todo lo fechado hasta hoy (**puede ser negativo**). Se bloquea mientras haya movimientos sin confirmar (`tmp-`) o el saldo esté calculándose.
+- Cache por año: `loadedYears` (no `txByYear[y]`: `upsertTx` puede crear un año con solo un movimiento optimista). Al llegar un año se conservan los optimistas `tmp-`. `rangePending` evita el "Sin movimientos" falso mientras carga un año. Las transferencias no cuentan en totales ni saldo. La app no convierte monedas (la hoja "Tu saldo" avisa si se mezclan).
+- UI en `components/app/balance.tsx`: `PeriodSummary`, `Monedero` (barra inferior móvil, siempre "Disponible hoy"), `BalanceCard` (hero desktop), `BalanceSheet` ("Tu saldo": Disponible hoy + link "¿No coincide? Ajustalo" + cuenta del período + desglose por día/semana/mes, sin gráfico). Firma visual: `Coin.tsx` (la monedita; con brote si el balance del mes hasta hoy es positivo) solo junto al Disponible. Calendario: balance mensual, balance del día y saldo al cierre (`balanceBefore`).
 - Los movimientos sin `Date` no entran en ningún total (los filtros de fecha de Notion los excluyen).
 
 ## Presupuestos por categoría
 
 - DB Notion: `Budgets` (`lib/notion/budgets.ts` — `getBudgetsByMonth`,
-  `createBudget`, `updateBudget`, todas con `creds?: NotionCreds` como las
+  `createBudget`, `updateBudget`, todas con `creds: NotionCreds` obligatorio como las
   demás). Son **mensuales**: un presupuesto por categoría y mes (`Month` =
   primer día del mes).
 - Se editan desde Categorías (campo "Presupuesto mensual" al editar una
@@ -190,19 +205,20 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 ## Componentes clave (`components/app/`)
 
 - `AppRoot.tsx` — StoreProvider + Shell, recibe initial data del server
-- `store.tsx` — context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, theme/dashStyle/accent). Los errores de mutación llegan al toast con el motivo real del servidor (`HttpError` / `failureText`); sesión vencida → aviso + redirect a /login
+- `store.tsx` — context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, `available`/`today`/`setAvailableToday`, theme/dashStyle/accent). Todo `fetch` pasa por `apiFetch`: un 401 = Notion desconectado → aviso + `location.replace("/setup?reason=expired")`. Los errores de mutación llegan al toast con el motivo real del servidor (`HttpError` / `failureText`)
 - `Shell.tsx` — layout responsive (Sidebar desktop / BottomNav móvil), nav, ThemeToggle
 - `Icon.tsx` — `Icon` (Lucide vía registry) + `CatBubble`
-- `Donut.tsx` — donut SVG segmentado; `TrendBars.tsx` — mini-gráfico de barras (mismo enfoque casero, sin libs)
-- `ui.tsx` — SegmentedControl (único estilo de selección; PeriodPills, FocusToggle, Segmented), MonthNav (Calendario) / RangeNav (Resumen), CenterBalance (total del foco, sin saldo), ActionButton, Toast, StateView
-- `Sheet.tsx` (Sheet, SheetHeader, ConfirmRow), `Coin.tsx`, `balance.tsx` (Monedero, BalanceCard, BalanceSheet)
+- `Donut.tsx` — donut SVG segmentado; expone `DonutInner` (ancho del hueco) para que `CenterBalance` ajuste la cifra
+- `ui.tsx` — SegmentedControl (único estilo de selección; PeriodPills, Segmented), MonthNav (Calendario) / RangeNav (Resumen), CenterBalance (total del foco que se ajusta al hueco del anillo, sin saldo), ActionButton, Toast, StateView
+- `Sheet.tsx` (Sheet, SheetHeader, ConfirmRow), `Coin.tsx`, `balance.tsx` (PeriodSummary, Monedero, BalanceCard, BalanceSheet)
 - `screen-{dashboard,movimientos,calendario,categorias,recurrentes,ajustes}.tsx`
 - `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda), `modal-recurrente.tsx` (fijos), `modal-range.tsx` (selector de rango del Resumen)
 - `lib/icon-registry.ts`, `lib/icon-catalog.ts`, `lib/format.ts`
 - `lib/date-range.ts` — motor puro de rangos de fechas (Día/Semana/Mes/Año/Personalizado) para el Resumen
 - `lib/notion/client.ts` — `queryDatabase()` helper REST
 - `lib/notion/markdown-blocks.ts` — markdown → bloques Notion + publish helpers, usado por `scripts/publish-notion-guide.ts` y `/api/notion/guide`
-- `lib/recurrence.ts` — motor de recurrencia de gastos/ingresos fijos
+- `lib/recurrence.ts` — motor de recurrencia de gastos/ingresos fijos (fechas, estado y contador mensual)
+- `app/setup/` — `page.tsx` (servidor: estado + motivo) y `setup-form.tsx` (cliente: formulario, "Recordar", llavero)
 - `lib/notion/budgets.ts` — CRUD de presupuestos mensuales por categoría
 
 ## Vercel deployment — caveats
@@ -233,6 +249,7 @@ máquina hay varias cuentas en `gh` y la activa suele ser otra
 - Para set/re-set env en Vercel: `echo 'valor' | npx vercel env add NAME production`. Usar `echo` (con newline). `printf '%s'` sin newline deja la var vacía.
 - `vercel env pull` siempre devuelve `""` para vars custom (son Sensitive) — no sirve para verificar valores. Verificar via runtime/logs de Vercel.
 - Env vars solo aplican a deploys **nuevos**. Tras cambiar vars, siempre hacer `npx vercel --prod --yes`.
+- En Vercel solo debe existir `AUTH_COOKIE_SECRET` (idéntico en Production y Preview: si cambia, se pierden todas las conexiones). **No** definir `APP_PASSWORD`, `NOTION_*` ni `DEV_AUTH_BYPASS`.
 - `una-monedita.vercel.app` apunta a build antiguo (sin GET `/api/transactions`, codebase vieja). No lo tocar.
 
 ## Reglas de desarrollo
@@ -242,4 +259,6 @@ máquina hay varias cuentas en `gh` y la activa suele ser otra
 3. Moneda: ARS (multi-moneda fuera de alcance)
 4. Para añadir una transacción desde código: POST `/api/transactions`
 5. El dashboard revalida con `router.refresh()` tras guardar — es server component
-6. `lib/notion/transactions.ts` exporta `getTransactions`, `createTransaction`, `updateTransaction`, `deleteTransaction`
+6. `lib/notion/transactions.ts` exporta `getTransactions`, `createTransaction`, `updateTransaction`, `deleteTransaction` (todas con `creds` obligatorio)
+7. **Cada cambio de funcionalidad o estructura actualiza `README.md` (composición de la app y funcionalidades) en el mismo commit.**
+8. Toda escritura del cliente a `/api/*` manda `Content-Type: application/json` (el proxy responde 415 si no). No exponer escrituras por GET.

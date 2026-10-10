@@ -9,9 +9,12 @@ Tus datos viven solo en tu Notion y tu Vercel. Nadie más los ve.
 
 1. Duplica la plantilla de Notion a tu cuenta
 2. Crea una integración de Notion y compártela con tu página
-3. Despliega la app en tu propio Vercel
-4. Conecta Notion (dentro de la app o por variables de entorno)
+3. Despliega la app en tu propio Vercel (una sola variable: `AUTH_COOKIE_SECRET`)
+4. Conecta Notion dentro de la app (`/setup`)
 5. Usa la app
+
+La app **no tiene contraseña**: conectar tu Notion (token + URL de tu página) es el
+ingreso. Cada persona usa su propia cuenta de Notion.
 
 ---
 
@@ -38,62 +41,66 @@ Tus datos viven solo en tu Notion y tu Vercel. Nadie más los ve.
 
 1. Acepta la invitación de colaborador al repositorio privado de GitHub.
 2. Entra a <https://vercel.com> → **New Project** → importa el repositorio.
-3. Configura las variables de entorno **obligatorias**:
+3. Configura la única variable de entorno **obligatoria**:
 
    | Variable | Valor |
    |----------|-------|
-   | `APP_PASSWORD` | Tu contraseña para entrar a la app |
-   | `AUTH_COOKIE_SECRET` | Texto aleatorio de 32+ caracteres |
+   | `AUTH_COOKIE_SECRET` | Texto aleatorio de 32+ caracteres (con `openssl rand -base64 32`) |
 
-   Para generar texto aleatorio: en una terminal corre `openssl rand -base64 32`,
-   o usa cualquier generador de contraseñas largas.
+   Con ese secreto se cifra la cookie que guarda tu conexión a Notion. Si lo cambias
+   después, todos los dispositivos pierden la conexión y hay que reconectar. Mantenlo
+   igual en Production y Preview.
+
+   **No definas** `NOTION_*` ni `DEV_AUTH_BYPASS` en Vercel: son solo para desarrollo
+   local, y en un deploy compartido harían que otra persona viera tu Notion.
 
 4. Pulsa **Deploy**. Espera a que termine.
 
 ## 5. Conecta Notion
 
-Tienes dos opciones. Elige una.
-
-### Opción A — Dentro de la app (recomendada, sin tocar Vercel)
-
-1. Abre tu app desplegada y entra con tu `APP_PASSWORD`.
-2. La app te llevará a la pantalla **Conecta tu Notion** (`/setup`).
-3. Pega:
-   - El **token** de integración (paso 2).
+1. Abre tu app desplegada. Sin conexión te lleva a **Conecta tu Notion** (`/setup`).
+2. Pega:
    - La **URL de tu página** duplicada (en Notion: Compartir → Copiar enlace).
+   - El **token** de integración (paso 2).
+3. Deja marcado **Recordar en este dispositivo** (en una compu compartida, desmárcalo).
 4. Pulsa **Conectar**. La app encuentra tus 6 bases de datos automáticamente.
 
-> Nota: esta conexión se guarda en la cookie de tu sesión. Si borras las cookies
-> del navegador, vuelve a `/setup` y reconéctala (2 minutos).
+Notas sobre la conexión:
 
-### Opción B — Variables de entorno (persistente)
-
-En Vercel → Settings → Environment Variables, agrega:
-
-```
-NOTION_TOKEN=<tu token de integración>
-NOTION_DB_TRANSACTIONS=<id de la base Transactions>
-NOTION_DB_CATEGORIES=<id de la base Categories>
-NOTION_DB_ACCOUNTS=<id de la base Accounts>
-NOTION_DB_SUBSCRIPTIONS=<id de la base Subscriptions>
-NOTION_DB_BUDGETS=<id de la base Budgets>
-NOTION_DB_FX_RATES=<id de la base FX Rates>
-```
-
-El ID de cada base es la parte de 32 caracteres en la URL de esa base
-(ábrela como página completa en Notion y mira la URL). Luego **redeploy**.
+- Se guarda en una cookie cifrada de ese dispositivo (400 días con "Recordar"; si no,
+  hasta cerrar el navegador). El servidor no guarda nada.
+- **Cada dispositivo se conecta una vez.** En el iPhone, la app instalada en la
+  pantalla de inicio tiene cookies separadas de Safari: conéctala dentro de la app
+  instalada.
+- El llavero (iCloud, Chrome) puede guardar la URL y el token para completarlos en
+  otro dispositivo.
+- **Ajustes → Notion → Desconectar Notion** borra la conexión de ese dispositivo.
+  Tus datos quedan en Notion.
+- Si pierdes un dispositivo: en <https://www.notion.so/my-integrations> regenera el
+  token de la integración y vuelve a conectar.
 
 ## 6. Usa la app
 
-Entra con tu contraseña y empieza a registrar gastos e ingresos.
-La moneda por defecto es **Euro**; puedes cambiarla en **Ajustes → Moneda**.
+Empieza a registrar gastos e ingresos. La moneda por defecto es **Euro**; puedes
+cambiarla en **Ajustes → Moneda**. Para que el **Disponible hoy** sea tu plata real,
+ve a **Ajustes → Saldo → ¿Cuánta plata tenés hoy?** y escribe lo que tienes (efectivo
+más banco).
 
 ---
 
+## Compartir tu deploy
+
+Cada persona conecta **su propia cuenta de Notion**: nadie ve los datos de otro.
+Aun así, el servidor usa el token de quien se conecta para leer su Notion. Lo más
+seguro es que cada persona haga su propio deploy desde el repositorio; si varias
+personas comparten una instalación, deben confiar en quien la administra.
+
 ## Notas
 
-- La contraseña (`APP_PASSWORD`) es solo tuya en tu deploy privado. Si la olvidas,
-  cámbiala en Vercel → Settings → Environment Variables → redeploy.
-- Si la app dice "Notion no configurado", ve a **Ajustes → Conectar Notion** o `/setup`.
+- Si la app te lleva a `/setup` con "Tu conexión venció" o "Notion rechazó el token":
+  reconecta (¿regeneraste el token o quitaste la integración de la página?).
 - Si `/setup` dice que no encuentra alguna base de datos: revisa que duplicaste la
   plantilla correcta y que compartiste la página con tu integración (paso 3).
+- Si ves "Falta AUTH_COOKIE_SECRET": define la variable en Vercel (32+ caracteres,
+  distinta del ejemplo de `.env.example`) y vuelve a desplegar.
+- Para desarrollo local (`pnpm dev`) ver el README.

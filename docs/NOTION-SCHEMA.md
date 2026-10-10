@@ -111,7 +111,7 @@ POST /v1/pages
 | `Name` | title | |
 | `Type` | select | `Banco` \| `Efectivo` \| `Tarjeta crédito` \| `Wallet virtual` \| `Cripto` |
 | `Currency` | select | `ARS` \| `USD` \| `EUR` \| `BTC` \| `ETH` \| `USDT` |
-| `InitialBalance` | number | Saldo inicial de la app: lo que había antes del primer movimiento. La app lo lee/escribe de la cuenta "Principal" (o la primera no archivada) vía `/api/accounts/opening` y lo suma al saldo acumulado (Disponible) |
+| `InitialBalance` | number | Saldo inicial de la app. Se calcula desde Ajustes → "¿Cuánta plata tenés hoy?": es lo que tenés hoy menos el neto (ingresos − gastos) de todo lo fechado hasta hoy, así que **puede ser negativo**. La app lo lee/escribe de la cuenta "Principal" (o la primera no archivada) vía `/api/accounts/opening`; Disponible hoy = `InitialBalance` + ingresos − gastos hasta hoy |
 | `Color` / `Icon` | rich_text | Igual convención que Categories |
 | `Archived` | checkbox | Soft-delete |
 
