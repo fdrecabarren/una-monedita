@@ -7,7 +7,7 @@
 
    Regla de color: un color = un significado.
    - --accent*      : SOLO botón primario, nav activa, anillo "hoy", focus. Cambia
-                      con [data-accent] (verde / teal / bosque).
+                      con [data-accent] (verde / teal / grafito).
    - --income*      : ingresos. Fijo, no cambia con el acento.
    - --expense*     : gastos. Fijo.
    - --warn         : aviso de presupuesto al 80%.
@@ -127,20 +127,54 @@
   --accent-ink: #0f6f6b;
   --accent-soft: #dcf1f0;
 }
-[data-accent="bosque"] {
-  --accent: #3f8f5b;
-  --accent-ink: #2a623d;
-  --accent-soft: #e2efe6;
-}
 [data-theme="dark"][data-accent="teal"] {
   --accent: #2fc7c0;
   --accent-ink: #2fc7c0;
   --accent-soft: #13302e;
 }
-[data-theme="dark"][data-accent="bosque"] {
-  --accent: #56b377;
-  --accent-ink: #56b377;
-  --accent-soft: #192a1f;
+
+/* ---- Grafito: tema en escala de grises. Reemplaza las superficies, el texto y el
+   acento por grises neutros; ingresos (verde), gastos (rojo), aviso y categorías
+   conservan su color. Especificidad (0,2,0) para ganarle a [data-theme] solo. ---- */
+[data-theme="light"][data-accent="grafito"] {
+  --bg: #f4f4f3;
+  --bg-2: #ececeb;
+  --surface: #ffffff;
+  --surface-2: #f6f6f5;
+  --line: #e2e2e0;
+  --line-strong: #cfcfcc;
+  --text: #1d1d1d;
+  --text-2: #555555;
+  --text-3: #6a6a6a;
+
+  --accent: #262626;
+  --accent-ink: #1d1d1d;
+  --accent-soft: #e8e8e7;
+  --on-accent: #ffffff;
+  --coin-face: #dededc;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-fab: 0 6px 16px rgba(0, 0, 0, 0.22);
+  --ring: rgba(38, 38, 38, 0.25);
+}
+[data-theme="dark"][data-accent="grafito"] {
+  --bg: #161616;
+  --bg-2: #1f1f1f;
+  --surface: #222222;
+  --surface-2: #2a2a2a;
+  --line: #343434;
+  --line-strong: #454545;
+  --text: #f2f2f2;
+  --text-2: #c6c6c6;
+  --text-3: #9c9c9c;
+
+  --accent: #ececec;
+  --accent-ink: #ececec;
+  --accent-soft: #2e2e2e;
+  --on-accent: #161616;
+  --coin-face: #2e2e2e;
+
+  --ring: rgba(236, 236, 236, 0.3);
 }
 
 * {

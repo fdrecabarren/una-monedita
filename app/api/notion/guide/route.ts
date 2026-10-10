@@ -4,24 +4,27 @@ import path from "node:path";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { getDatabaseParentPageId } from "@/lib/notion/client";
 import { publishMarkdownPage } from "@/lib/notion/markdown-blocks";
+import { isNotionUnauthorized, notionErrorResponse } from "@/lib/notion/errors";
 
 export const dynamic = "force-dynamic";
 
 const PAGE_TITLE = "📖 Guía del sistema (para agentes)";
 
 // Publishes docs/NOTION-SCHEMA.md as a child page under the user's "Una
-// Monedita" main page, using their own session creds (works even when the
-// server's NOTION_TOKEN / NOTION_PARENT_PAGE_ID env vars are stale). Mirrors
-// scripts/publish-notion-guide.ts, which does the same thing from the CLI
-// with env-var creds — both call the shared lib/notion/markdown-blocks.ts.
+// Monedita" main page, using the creds of the connected Notion (cookie). Mirrors
+// scripts/publish-notion-guide.ts, which does the same thing from the CLI with
+// env-var creds: both call the shared lib/notion/markdown-blocks.ts.
 export async function POST(request: Request) {
   const creds = await getNotionCredsFromRequest(request);
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
 
-  const parentId =
-    (await getDatabaseParentPageId(creds.dbIds.transactions, creds.token).catch(() => null)) ??
-    process.env.NOTION_PARENT_PAGE_ID ??
-    null;
+  let parentId: string | null;
+  try {
+    parentId = await getDatabaseParentPageId(creds.dbIds.transactions, creds.token);
+  } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("guide:parent", err);
+    parentId = null;
+  }
   if (!parentId) {
     return NextResponse.json(
       { error: "No pude resolver la página principal de Notion (padre de Transactions)." },
@@ -40,6 +43,7 @@ export async function POST(request: Request) {
     const result = await publishMarkdownPage(creds.token, parentId, PAGE_TITLE, "📖", markdown);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("guide:publish", err);
     return NextResponse.json({ error: "Error publicando en Notion", detail: String(err) }, { status: 502 });
   }
 }

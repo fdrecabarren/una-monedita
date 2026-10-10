@@ -1,15 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
 import { useStore, type TxType } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { Donut } from "./Donut";
-import { TrendBars } from "./TrendBars";
-import { PeriodPills, RangeNav, CenterBalance, StateView, FocusToggle } from "./ui";
-import { Monedero, BalanceCard } from "./balance";
+import { PeriodPills, RangeNav, CenterBalance, StateView } from "./ui";
+import { Monedero, BalanceCard, PeriodSummary } from "./balance";
 import { useElementSize } from "./useElementSize";
 import { fmt, fmtShort } from "@/lib/format";
-import { bucketsFor, daysBetween, endOfMonth, rangeLabel as formatRangeLabel } from "@/lib/date-range";
+import { daysBetween, endOfMonth, rangeLabel as formatRangeLabel } from "@/lib/date-range";
 
 // Tamaño del anillo entre min y max que entre en el contenedor: el anillo de
 // 332px fijo no entraba en un iPhone chico (375×667).
@@ -122,23 +120,6 @@ export function LegendList({ limit = 99, compact = false }: { limit?: number; co
   );
 }
 
-// Monto por balde (día/semana/mes, según bucketsFor) dentro del rango visible,
-// para el tipo (gasto/ingreso) que esté en foco.
-function useTrend(focus: TxType) {
-  const { visibleTx, range } = useStore();
-  return useMemo(() => {
-    const buckets = bucketsFor(range);
-    return buckets.map((b) => ({
-      key: b.key,
-      label: b.label,
-      value: visibleTx.reduce(
-        (sum, t) => (!t.transfer && t.type === focus && t.date >= b.start && t.date <= b.end ? sum + t.amount : sum),
-        0
-      ),
-    }));
-  }, [visibleTx, range, focus]);
-}
-
 function StatTile({ label, value, color = "var(--text)", icon }: { label: string; value: string; color?: string; icon?: string }) {
   return (
     <div className="card" style={{ flex: "1 1 130px", padding: "10px 12px" }}>
@@ -198,35 +179,6 @@ function ComparativeStats() {
   );
 }
 
-function TrendSection() {
-  const { focus } = useStore();
-  const isExpense = focus === "expense";
-  const trend = useTrend(focus);
-  const total = trend.reduce((s, d) => s + d.value, 0);
-  if (total <= 0) return null;
-  const peak = trend.reduce((a, b) => (b.value > a.value ? b : a), trend[0]);
-  return (
-    <div className="card" style={{ padding: "14px 14px 8px" }}>
-      <div className="eyebrow" style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-        <Icon name="ChartColumn" size={14} stroke={2.4} color="var(--text-2)" /> {isExpense ? "Tendencia de gasto" : "Tendencia de ingresos"}
-      </div>
-      <TrendBars
-        data={trend}
-        color={isExpense ? "var(--expense-fill)" : "var(--income-fill)"}
-        ariaLabel={`${isExpense ? "Gasto" : "Ingresos"} por período. Más alto: ${peak.label}, ${Math.round(peak.value)}`}
-      />
-    </div>
-  );
-}
-
-function FocusRow() {
-  return (
-    <div style={{ display: "flex", justifyContent: "center", padding: "2px 16px 8px", flex: "0 0 auto" }}>
-      <FocusToggle />
-    </div>
-  );
-}
-
 function FitRing() {
   const [ref, size] = useFit(240, 332);
   return (
@@ -253,22 +205,20 @@ export function DashboardMobile() {
         title={focus === "income" ? "Sin ingresos" : "Sin gastos"}
         message={
           focus === "income"
-            ? "No registraste ingresos en este período. Probá con otro rango."
-            : "No registraste gastos en este período. Probá con otro rango."
+            ? "No registraste ingresos en este período. Tocá Gastos arriba o probá con otro rango."
+            : "No registraste gastos en este período. Tocá Ingresos arriba o probá con otro rango."
         }
       />
     );
   } else if (dashStyle === "A") {
     body = (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <FocusRow />
         <FitRing />
       </div>
     );
   } else if (dashStyle === "B") {
     body = (
       <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
-        <FocusRow />
         <div style={{ display: "grid", placeItems: "center", padding: "6px 0 12px" }}>
           <Donut segments={donutSegments} size={188} thickness={20} label={donutLabel(focus, breakdown)}>
             <CenterBalance scale={0.9} />
@@ -279,14 +229,12 @@ export function DashboardMobile() {
         </div>
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <ComparativeStats />
-          <TrendSection />
         </div>
       </div>
     );
   } else {
     body = (
       <div className="app-scroll" style={{ height: "100%", overflowY: "auto" }}>
-        <FocusRow />
         <div style={{ display: "grid", placeItems: "center", padding: "2px 0 10px" }}>
           <Donut segments={donutSegments} size={176} thickness={19} label={donutLabel(focus, breakdown)}>
             <CenterBalance scale={0.86} />
@@ -318,7 +266,6 @@ export function DashboardMobile() {
         </div>
         <div style={{ padding: "0 16px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           <ComparativeStats />
-          <TrendSection />
         </div>
       </div>
     );
@@ -329,6 +276,9 @@ export function DashboardMobile() {
       <div style={{ padding: "4px 16px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
         <PeriodPills />
         <RangeNav />
+      </div>
+      <div style={{ padding: "4px 16px 8px", flex: "0 0 auto" }}>
+        <PeriodSummary />
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>{body}</div>
       {showMonedero && (
@@ -354,8 +304,8 @@ export function DashboardDesktop() {
         title={focus === "income" ? "Sin ingresos" : "Sin gastos"}
         message={
           focus === "income"
-            ? "No registraste ingresos en este período. Probá con otro rango."
-            : "No registraste gastos en este período. Probá con otro rango."
+            ? "No registraste ingresos en este período. Tocá Gastos arriba o probá con otro rango."
+            : "No registraste gastos en este período. Tocá Ingresos arriba o probá con otro rango."
         }
       />
     );
@@ -382,15 +332,12 @@ export function DashboardDesktop() {
         {showBalance && (
           <div style={{ display: "flex", gap: 16, alignItems: "flex-start", flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 320px", minWidth: 0 }}><BalanceCard /></div>
-            {showStats && (
-              <div style={{ flex: "2 1 360px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-                <ComparativeStats />
-                <TrendSection />
-              </div>
-            )}
+            <div style={{ flex: "2 1 360px", minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+              <PeriodSummary large />
+              {showStats && <ComparativeStats />}
+            </div>
           </div>
         )}
-        <div style={{ display: "flex", justifyContent: "center" }}><FocusToggle /></div>
         <div style={{ flex: 1, minHeight: 0 }}>{center}</div>
       </div>
     </div>

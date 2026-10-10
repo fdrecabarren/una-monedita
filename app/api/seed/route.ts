@@ -7,6 +7,7 @@ import {
 } from "@/lib/notion/categories";
 import { getNotionCredsFromRequest, type NotionCreds } from "@/lib/auth/session";
 import type { CategoryKind } from "@/lib/notion/schemas";
+import { withNotionErrors } from "@/lib/notion/errors";
 
 // Monefy-style design category set: Lucide icon (PascalCase) + hex color.
 const DEFAULTS: { kind: CategoryKind; name: string; icon: string; color: string }[] = [
@@ -42,33 +43,37 @@ async function seedAll(creds: NotionCreds) {
   }
 }
 
-// GET: seeds the design set if DB empty.
-// GET ?reset=1: archives every existing category, then seeds the design set.
-// Requires a valid session — this endpoint can wipe every category.
-export async function GET(request: Request) {
+// POST: seeds the design set if DB empty.
+// POST ?reset=1: archives every existing category, then seeds the design set.
+// Es POST (con JSON y mismo origen, ver proxy.ts) y no GET: un link de otro sitio no
+// puede archivar todas las categorías. Nadie del cliente lo llama; se corre desde la
+// consola del navegador con la app abierta (ver README).
+export async function POST(request: Request) {
   const creds = await getNotionCredsFromRequest(request);
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
 
-  const { searchParams } = new URL(request.url);
-  const reset = searchParams.get("reset") === "1";
+  return withNotionErrors("seed", "No se pudieron sembrar las categorías", async () => {
+    const { searchParams } = new URL(request.url);
+    const reset = searchParams.get("reset") === "1";
 
-  if (reset) {
-    const all = await getAllCategoriesRaw(creds);
-    let archived = 0;
-    for (const c of all) {
-      if (!c.archived) {
-        await updateCategory(c.id, { archived: true }, creds);
-        archived++;
+    if (reset) {
+      const all = await getAllCategoriesRaw(creds);
+      let archived = 0;
+      for (const c of all) {
+        if (!c.archived) {
+          await updateCategory(c.id, { archived: true }, creds);
+          archived++;
+        }
       }
+      await seedAll(creds);
+      return NextResponse.json({ reset: true, archived, seeded: DEFAULTS.length });
+    }
+
+    const existing = await getCategories(undefined, creds);
+    if (existing.length > 0) {
+      return NextResponse.json({ seeded: false, count: existing.length });
     }
     await seedAll(creds);
-    return NextResponse.json({ reset: true, archived, seeded: DEFAULTS.length });
-  }
-
-  const existing = await getCategories(undefined, creds);
-  if (existing.length > 0) {
-    return NextResponse.json({ seeded: false, count: existing.length });
-  }
-  await seedAll(creds);
-  return NextResponse.json({ seeded: true, count: DEFAULTS.length });
+    return NextResponse.json({ seeded: true, count: DEFAULTS.length });
+  });
 }

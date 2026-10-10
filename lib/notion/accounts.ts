@@ -1,4 +1,4 @@
-import { getNotionClient, DB_IDS, queryDatabase } from "./client";
+import { getNotionClient, queryDatabase } from "./client";
 import type { NotionCreds } from "@/lib/auth/session";
 import { AccountSchema, type Account, type AccountType, type Currency } from "./schemas";
 import { getTitle, getSelect, getRichText, getNumber, getCheckbox } from "./helpers";
@@ -18,11 +18,11 @@ function pageToAccount(page: PageObjectResponse): Account {
   });
 }
 
-export async function getAccounts(creds?: NotionCreds): Promise<Account[]> {
+export async function getAccounts(creds: NotionCreds): Promise<Account[]> {
   const res = await queryDatabase(
-    creds?.dbIds.accounts ?? DB_IDS.accounts,
+    creds.dbIds.accounts,
     { sorts: [{ property: "Name", direction: "ascending" }] },
-    creds?.token
+    creds.token
   );
   return res.results
     .filter((p): p is PageObjectResponse => p.object === "page" && "properties" in p)
@@ -30,8 +30,8 @@ export async function getAccounts(creds?: NotionCreds): Promise<Account[]> {
     .filter((a) => !a.archived);
 }
 
-export async function getAccountById(id: string, creds?: NotionCreds): Promise<Account | null> {
-  const notion = getNotionClient(creds?.token);
+export async function getAccountById(id: string, creds: NotionCreds): Promise<Account | null> {
+  const notion = getNotionClient(creds.token);
   try {
     const page = await notion.pages.retrieve({ page_id: id });
     if (page.object !== "page" || !("properties" in page)) return null;
@@ -50,11 +50,11 @@ export async function createAccount(
     color?: string;
     icon?: string;
   },
-  creds?: NotionCreds
+  creds: NotionCreds
 ): Promise<Account> {
-  const notion = getNotionClient(creds?.token);
+  const notion = getNotionClient(creds.token);
   const page = await notion.pages.create({
-    parent: { database_id: creds?.dbIds.accounts ?? DB_IDS.accounts },
+    parent: { database_id: creds.dbIds.accounts },
     properties: {
       Name: { title: [{ text: { content: data.name } }] },
       Type: { select: { name: data.type } },
@@ -76,9 +76,9 @@ export async function updateAccount(
     initialBalance: number;
     archived: boolean;
   }>,
-  creds?: NotionCreds
+  creds: NotionCreds
 ): Promise<Account> {
-  const notion = getNotionClient(creds?.token);
+  const notion = getNotionClient(creds.token);
   const page = await notion.pages.update({
     page_id: id,
     properties: {
@@ -99,7 +99,7 @@ export async function updateAccount(
 // hay una sola cuenta, esa; con varias y sin "Principal", no hay target (el PUT
 // crea "Principal" con la diferencia).
 export async function getOpeningInfo(
-  creds?: NotionCreds
+  creds: NotionCreds
 ): Promise<{ total: number; target: Account | null; others: number }> {
   const accounts = await getAccounts(creds);
   const total = accounts.reduce((s, a) => s + (a.initialBalance ?? 0), 0);

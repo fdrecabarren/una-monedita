@@ -1,4 +1,4 @@
-import { getNotionClient, DB_IDS, queryDatabase } from "./client";
+import { getNotionClient, queryDatabase } from "./client";
 import type { NotionCreds } from "@/lib/auth/session";
 import { SubscriptionSchema, type Subscription, type Frequency, type SubscriptionStatus, type Currency } from "./schemas";
 import { getTitle, getSelect, getNumber, getRichText, getDate, getRelationId } from "./helpers";
@@ -27,19 +27,19 @@ function pageToSubscription(page: PageObjectResponse): Subscription {
   });
 }
 
-export async function getSubscriptions(status?: SubscriptionStatus, creds?: NotionCreds): Promise<Subscription[]> {
+export async function getSubscriptions(status: SubscriptionStatus | undefined, creds: NotionCreds): Promise<Subscription[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const filter: any = status
     ? { property: "Status", select: { equals: status } }
     : undefined;
 
   const res = await queryDatabase(
-    creds?.dbIds.subscriptions ?? DB_IDS.subscriptions,
+    creds.dbIds.subscriptions,
     {
       filter,
       sorts: [{ property: "NextChargeDate", direction: "ascending" }],
     },
-    creds?.token
+    creds.token
   );
 
   return res.results
@@ -47,8 +47,8 @@ export async function getSubscriptions(status?: SubscriptionStatus, creds?: Noti
     .map(pageToSubscription);
 }
 
-export async function getSubscriptionById(id: string, creds?: NotionCreds): Promise<Subscription | null> {
-  const notion = getNotionClient(creds?.token);
+export async function getSubscriptionById(id: string, creds: NotionCreds): Promise<Subscription | null> {
+  const notion = getNotionClient(creds.token);
   try {
     const page = await notion.pages.retrieve({ page_id: id });
     if (page.object !== "page" || !("properties" in page)) return null;
@@ -72,10 +72,10 @@ export async function createSubscription(data: {
   accountId?: string;
   categoryId?: string;
   notes?: string;
-}, creds?: NotionCreds): Promise<Subscription> {
-  const notion = getNotionClient(creds?.token);
+}, creds: NotionCreds): Promise<Subscription> {
+  const notion = getNotionClient(creds.token);
   const page = await notion.pages.create({
-    parent: { database_id: creds?.dbIds.subscriptions ?? DB_IDS.subscriptions },
+    parent: { database_id: creds.dbIds.subscriptions },
     properties: {
       Name: { title: [{ text: { content: data.name } }] },
       Type: { select: { name: data.type ?? "Gasto" } },
@@ -116,9 +116,9 @@ export async function updateSubscription(
     categoryId: string;
     notes: string;
   }>,
-  creds?: NotionCreds
+  creds: NotionCreds
 ): Promise<Subscription> {
-  const notion = getNotionClient(creds?.token);
+  const notion = getNotionClient(creds.token);
   const page = await notion.pages.update({
     page_id: id,
     properties: {
@@ -143,7 +143,7 @@ export async function updateSubscription(
   return pageToSubscription(page as PageObjectResponse);
 }
 
-export async function deleteSubscription(id: string, creds?: NotionCreds): Promise<void> {
-  const notion = getNotionClient(creds?.token);
+export async function deleteSubscription(id: string, creds: NotionCreds): Promise<void> {
+  const notion = getNotionClient(creds.token);
   await notion.pages.update({ page_id: id, in_trash: true });
 }

@@ -1,4 +1,4 @@
-import { getNotionClient, DB_IDS, queryDatabase } from "./client";
+import { getNotionClient, queryDatabase } from "./client";
 import type { NotionCreds } from "@/lib/auth/session";
 import { CategorySchema, type Category, type CategoryKind } from "./schemas";
 import { getTitle, getSelect, getRichText, getCheckbox } from "./helpers";
@@ -16,18 +16,18 @@ function pageToCategory(page: PageObjectResponse): Category {
   });
 }
 
-export async function getCategories(kind?: "Ingreso" | "Gasto", creds?: NotionCreds): Promise<Category[]> {
+export async function getCategories(kind: "Ingreso" | "Gasto" | undefined, creds: NotionCreds): Promise<Category[]> {
   const filter = kind
     ? ({ property: "Kind", select: { equals: kind } } as const)
     : undefined;
 
   const res = await queryDatabase(
-    creds?.dbIds.categories ?? DB_IDS.categories,
+    creds.dbIds.categories,
     {
       filter,
       sorts: [{ property: "Name", direction: "ascending" }],
     },
-    creds?.token
+    creds.token
   );
 
   return res.results
@@ -36,8 +36,8 @@ export async function getCategories(kind?: "Ingreso" | "Gasto", creds?: NotionCr
     .filter((c) => !c.archived);
 }
 
-export async function getCategoryById(id: string, creds?: NotionCreds): Promise<Category | null> {
-  const notion = getNotionClient(creds?.token);
+export async function getCategoryById(id: string, creds: NotionCreds): Promise<Category | null> {
+  const notion = getNotionClient(creds.token);
   try {
     const page = await notion.pages.retrieve({ page_id: id });
     if (page.object !== "page" || !("properties" in page)) return null;
@@ -52,10 +52,10 @@ export async function createCategory(data: {
   kind: CategoryKind;
   icon?: string;
   color?: string;
-}, creds?: NotionCreds): Promise<Category> {
-  const notion = getNotionClient(creds?.token);
+}, creds: NotionCreds): Promise<Category> {
+  const notion = getNotionClient(creds.token);
   const page = await notion.pages.create({
-    parent: { database_id: creds?.dbIds.categories ?? DB_IDS.categories },
+    parent: { database_id: creds.dbIds.categories },
     properties: {
       Name: { title: [{ text: { content: data.name } }] },
       Kind: { select: { name: data.kind } },
@@ -69,9 +69,9 @@ export async function createCategory(data: {
 export async function updateCategory(
   id: string,
   data: Partial<{ name: string; kind: CategoryKind; icon: string; color: string; archived: boolean }>,
-  creds?: NotionCreds
+  creds: NotionCreds
 ): Promise<Category> {
-  const notion = getNotionClient(creds?.token);
+  const notion = getNotionClient(creds.token);
   const page = await notion.pages.update({
     page_id: id,
     properties: {
@@ -86,18 +86,18 @@ export async function updateCategory(
 }
 
 // Soft-delete: archive so existing transactions keep their relation intact.
-export async function deleteCategory(id: string, creds?: NotionCreds): Promise<void> {
+export async function deleteCategory(id: string, creds: NotionCreds): Promise<void> {
   await updateCategory(id, { archived: true }, creds);
 }
 
 // Hard list incl. archived (used by reset/migration).
-export async function getAllCategoriesRaw(creds?: NotionCreds): Promise<Category[]> {
+export async function getAllCategoriesRaw(creds: NotionCreds): Promise<Category[]> {
   const res = await queryDatabase(
-    creds?.dbIds.categories ?? DB_IDS.categories,
+    creds.dbIds.categories,
     {
       sorts: [{ property: "Name", direction: "ascending" }],
     },
-    creds?.token
+    creds.token
   );
   return res.results
     .filter((p): p is PageObjectResponse => p.object === "page" && "properties" in p)

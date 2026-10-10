@@ -22,7 +22,7 @@ export interface ChargeResult {
 export async function chargeSubscription(
   sub: Subscription,
   opts: { date: string; amount?: number; categoryId?: string; notes?: string },
-  creds?: NotionCreds
+  creds: NotionCreds
 ): Promise<ChargeResult> {
   const covered = (sub.nextChargeDate ?? opts.date).slice(0, 10);
   const nextChargeDate = addInterval(covered, sub.frequency, sub.customIntervalDays, sub.dueDay);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { updateCategory, deleteCategory } from "@/lib/notion/categories";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { withNotionErrors } from "@/lib/notion/errors";
 import { z } from "zod";
 
 const PatchSchema = z.object({
@@ -29,8 +30,10 @@ export async function PATCH(
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const cat = await updateCategory(id, parsed.data, creds);
-  return NextResponse.json(cat);
+  return withNotionErrors("categories:update", "No se pudo guardar la categoría", async () => {
+    const cat = await updateCategory(id, parsed.data, creds);
+    return NextResponse.json(cat);
+  });
 }
 
 export async function DELETE(
@@ -44,6 +47,8 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  await deleteCategory(id, creds);
-  return NextResponse.json({ ok: true });
+  return withNotionErrors("categories:delete", "No se pudo eliminar la categoría", async () => {
+    await deleteCategory(id, creds);
+    return NextResponse.json({ ok: true });
+  });
 }

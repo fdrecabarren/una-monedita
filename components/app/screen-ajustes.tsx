@@ -3,31 +3,59 @@
 import { useState, useEffect } from "react";
 import { useStore, failureText, type DashStyle, type Accent, type AppCurrency } from "./store";
 import { Icon } from "./Icon";
+import { Coin } from "./Coin";
 import { SegmentedControl } from "./ui";
+import { Sheet, SheetHeader, ConfirmRow } from "./Sheet";
 import { fmt, parseAmount } from "@/lib/format";
-import { addDays, startOfDay } from "@/lib/date-range";
 
 const NOTION_TEMPLATE_URL =
   "https://app.notion.com/p/UNA-MONEDITA-copy-3795c48e39b6803da9abf7ab40919b39?source=copy_link";
 
+// Respuesta de /api/me: la conexión con Notion de ESTE dispositivo.
+type Conn = { connected: boolean; via: "cookie" | "legacy" | "dev" | null; remember: boolean | null };
+
 function NotionSection() {
-  const [status, setStatus] = useState<{ configured: boolean; via: "jwt" | "env" | null } | null>(null);
+  const [status, setStatus] = useState<Conn | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/me")
       .then((r) => r.json())
       .then(setStatus)
-      .catch(() => setStatus({ configured: false, via: null }));
+      .catch(() => setStatus({ connected: false, via: null, remember: null }));
   }, []);
 
+  const connected = !!status?.connected;
   const statusLabel = !status
     ? "Comprobando..."
-    : status.via === "jwt"
-      ? "Conectado"
-      : status.via === "env"
-        ? "Conectado (servidor)"
-        : "No configurado";
-  const statusColor = status?.configured ? "var(--accent-ink)" : "var(--text-3)";
+    : !connected
+      ? "No conectado"
+      : status.via === "dev"
+        ? "Conectado (modo desarrollo)"
+        : status.remember === false
+          ? "Conectado · hasta cerrar el navegador"
+          : status.remember
+            ? "Conectado · recordado en este dispositivo"
+            : "Conectado";
+  const statusColor = connected ? "var(--accent-ink)" : "var(--text-3)";
+
+  // Borra la conexión de este dispositivo (la cookie). Solo si el servidor
+  // confirma se sale a /setup: si falla, la conexión sigue y se avisa.
+  async function disconnect() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/setup", { method: "DELETE" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      window.location.replace("/setup");
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo desconectar. Probá de nuevo.");
+      setBusy(false);
+    }
+  }
 
   return (
     <Row label="Notion" hint="Tu base de datos personal. Duplicá la plantilla y conectá tu cuenta.">
@@ -51,12 +79,51 @@ function NotionSection() {
           onClick={() => {
             window.location.href = "/setup";
           }}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", minHeight: 44, borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
         >
           <Icon name="Plug" size={16} stroke={2.2} color="var(--accent-ink)" />
-          {status?.via === "jwt" ? "Reconfigurar Notion" : "Conectar Notion"}
+          {connected ? "Cambiar de cuenta de Notion" : "Conectar Notion"}
         </button>
+
+        {connected && status?.via !== "dev" && (
+          <>
+            <button
+              onClick={() => {
+                setError(null);
+                setConfirming(true);
+              }}
+              style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: "11px", minHeight: 44, borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--expense)", fontWeight: 800, fontSize: 13.5, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              <Icon name="LogOut" size={16} stroke={2.2} color="var(--expense)" />
+              Desconectar Notion
+            </button>
+            <div className="caption" style={{ color: "var(--text-3)" }}>
+              Si perdés un dispositivo: en notion.so/my-integrations regenerá el token de la integración y volvé a conectar.
+            </div>
+          </>
+        )}
       </div>
+
+      {confirming && (
+        <Sheet label="Desconectar Notion" onClose={() => (busy ? undefined : setConfirming(false))}>
+          <SheetHeader title="Desconectar Notion" onClose={() => (busy ? undefined : setConfirming(false))} />
+          <div style={{ padding: "6px 20px calc(22px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10 }}>
+            <ConfirmRow
+              question="¿Desconectar Notion de este dispositivo?"
+              detail="Tus datos quedan en Notion. Para volver a entrar necesitás tu token y la URL de la página."
+              confirmLabel="Desconectar"
+              busy={busy}
+              onCancel={() => setConfirming(false)}
+              onConfirm={disconnect}
+            />
+            {error && (
+              <div role="alert" style={{ fontSize: 13, fontWeight: 700, color: "var(--expense)", textAlign: "center", lineHeight: 1.4 }}>
+                {error}
+              </div>
+            )}
+          </div>
+        </Sheet>
+      )}
     </Row>
   );
 }
@@ -83,7 +150,7 @@ function MantenimientoSection() {
     if (migrateState.kind === "busy") return;
     setMigrateState({ kind: "busy" });
     try {
-      const res = await fetch("/api/subscriptions/migrate", { method: "POST" });
+      const res = await fetch("/api/subscriptions/migrate", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error ?? "Error");
       const added: string[] = data.added ?? [];
@@ -100,7 +167,7 @@ function MantenimientoSection() {
     if (guideState.kind === "busy") return;
     setGuideState({ kind: "busy" });
     try {
-      const res = await fetch("/api/notion/guide", { method: "POST" });
+      const res = await fetch("/api/notion/guide", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
       const data = await res.json();
       // el endpoint manda `detail` con el error crudo de Notion — sin él el
       // mensaje genérico no alcanza para diagnosticar desde el celular
@@ -203,139 +270,128 @@ function Pills<T extends string>({ label, value, options, onChange }: { label: s
   return <SegmentedControl<T> label={label} options={options} value={value} onChange={onChange} stretch />;
 }
 
-// Saldo: interruptor del acumulado + saldo inicial (Notion · Accounts.InitialBalance).
+// Saldo: "¿Cuánta plata tenés hoy?". La app calcula el saldo inicial para que el
+// Disponible de hoy sea exactamente lo que escribís (Notion · Accounts.InitialBalance).
 function SaldoSection() {
-  const { carryOver, setCarryOver, initialBalance, initialBalanceError, retryHistory, setInitialBalance, balanceBefore, currency } = useStore();
-  const [draft, setDraft] = useState<string | null>(null);
-  const [calcOpen, setCalcOpen] = useState(false);
-  const [todayAmount, setTodayAmount] = useState("");
+  const { available, setAvailableToday, hasPendingTx, initialBalance, retryHistory, currency, allTx } = useStore();
+  const [value, setValue] = useState("");
+  const [howOpen, setHowOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const shown = draft ?? (initialBalance === null ? "" : String(initialBalance));
-  const dirty = draft !== null && parseAmount(draft) !== initialBalance;
-  // saldo contando todo lo registrado hasta hoy (null si el historial no está listo)
-  const closingToday = balanceBefore(startOfDay(addDays(new Date(), 1)));
-  const canCalc = closingToday !== null && initialBalance !== null;
+  const parsed = parseAmount(value);
+  const reason =
+    available.status === "loading"
+      ? "Calculando tu saldo…"
+      : hasPendingTx
+        ? "Esperá a que se guarde el último movimiento."
+        : null;
+  const canSave = available.status === "ready" && !hasPendingTx && parsed !== null && !busy;
+  const currencies = [...new Set(allTx.map((t) => t.currency))];
 
   async function save() {
-    const n = parseAmount(shown);
-    if (n === null) {
+    if (parsed === null) {
       setMsg({ ok: false, text: "Ingresá un número." });
       return;
     }
     setBusy(true);
     setMsg(null);
     try {
-      await setInitialBalance(Math.round(n * 100) / 100);
-      setDraft(null);
-      setMsg({ ok: true, text: "Saldo inicial guardado." });
+      await setAvailableToday(Math.round(parsed * 100) / 100);
+      setValue("");
+      setMsg({ ok: true, text: `Listo. Disponible hoy: ${fmt(parsed, currency)}.` });
     } catch (err) {
-      setMsg({ ok: false, text: failureText(err, "No se pudo guardar el saldo inicial") });
+      setMsg({ ok: false, text: failureText(err, "No se pudo guardar tu saldo") });
     } finally {
       setBusy(false);
     }
   }
 
-  function applyToday() {
-    const hoy = parseAmount(todayAmount);
-    if (hoy === null || closingToday === null || initialBalance === null) {
-      setMsg({ ok: false, text: "Ingresá cuánta plata tenés hoy." });
-      return;
-    }
-    // disponible hoy = saldo inicial + movimientos hasta hoy  →  inicial = hoy − movimientos
-    const initial = Math.round((hoy - (closingToday - initialBalance)) * 100) / 100;
-    setDraft(String(initial));
-    setCalcOpen(false);
-    setTodayAmount("");
-    setMsg({ ok: true, text: `Saldo inicial calculado: ${fmt(initial, currency)}. Tocá Guardar para confirmarlo.` });
-  }
-
   return (
     <Row
       label="Saldo"
-      hint="Acumulado: cada período arranca con lo que te quedó del anterior, así ves cuánta plata tenés. Solo del período: se reinicia en cada período."
+      hint="Lo que pongas acá es lo que tenés hoy. Desde ahí, cada gasto resta y cada ingreso suma, y el número no cambia al pasar de mes."
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <Pills
-          label="Saldo"
-          value={carryOver ? "on" : "off"}
-          onChange={(v) => setCarryOver(v === "on")}
-          options={[{ value: "off", label: "Solo del período" }, { value: "on", label: "Acumulado" }]}
-        />
+        <div className="card" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Coin size={30} sprout={available.status === "ready" && available.monthNet > 0} />
+          <div style={{ minWidth: 0 }}>
+            <div className="eyebrow">Disponible hoy</div>
+            {available.status === "loading" && <div className="skeleton-row" role="status" aria-label="Calculando saldo" style={{ height: 28, width: 140, marginTop: 4 }} />}
+            {available.status === "error" && (
+              <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "var(--expense)", lineHeight: 1.4 }}>
+                No se pudo calcular tu saldo.
+                <button
+                  onClick={retryHistory}
+                  style={{ minHeight: 44, padding: "0 6px", border: "none", background: "transparent", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+            {available.status === "ready" && (
+              <div className="num-coin" style={{ fontSize: 26, lineHeight: 1.2, color: available.amount < 0 ? "var(--expense)" : "var(--text)" }}>
+                {fmt(available.amount, currency)}
+              </div>
+            )}
+          </div>
+        </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <label htmlFor="saldo-inicial" style={{ fontWeight: 800, fontSize: 14 }}>Saldo inicial</label>
-          <div className="caption" style={{ color: "var(--text-3)" }}>¿Con cuánta plata arrancaste? Es lo que tenías antes de registrar tu primer movimiento.</div>
+          <label htmlFor="plata-hoy" style={{ fontWeight: 800, fontSize: 14 }}>¿Cuánta plata tenés hoy? (efectivo + banco)</label>
           <div style={{ display: "flex", gap: 8 }}>
             <input
-              id="saldo-inicial"
+              id="plata-hoy"
               inputMode="decimal"
-              value={shown}
-              disabled={initialBalance === null}
+              value={value}
+              disabled={available.status !== "ready"}
               onChange={(e) => {
-                setDraft(e.target.value);
+                setValue(e.target.value);
                 setMsg(null);
               }}
-              placeholder={initialBalance === null ? (initialBalanceError ? "No disponible" : "Cargando…") : "Ej: 150000"}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && canSave) void save();
+              }}
+              placeholder="Ej: 1000"
               style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
             />
             <button
               onClick={save}
-              disabled={busy || !dirty}
-              style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "none", background: dirty ? "var(--accent)" : "var(--bg-2)", color: dirty ? "var(--on-accent)" : "var(--text-3)", fontWeight: 800, fontSize: 14.5, cursor: busy || !dirty ? "not-allowed" : "pointer", fontFamily: "inherit" }}
+              disabled={!canSave}
+              style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "none", background: canSave ? "var(--accent)" : "var(--bg-2)", color: canSave ? "var(--on-accent)" : "var(--text-3)", fontWeight: 800, fontSize: 14.5, cursor: canSave ? "pointer" : "not-allowed", fontFamily: "inherit" }}
             >
               {busy ? "Guardando…" : "Guardar"}
             </button>
           </div>
+          {reason && <div className="caption" style={{ color: "var(--text-3)" }}>{reason}</div>}
           {msg && (
             <div role={msg.ok ? "status" : "alert"} style={{ fontSize: 13, fontWeight: 700, color: msg.ok ? "var(--income)" : "var(--expense)", lineHeight: 1.4 }}>
               {msg.text}
-            </div>
-          )}
-          {initialBalanceError && (
-            <div role="alert" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "var(--expense)", lineHeight: 1.4 }}>
-              No se pudo leer el saldo inicial de Notion.
-              <button
-                onClick={retryHistory}
-                style={{ minHeight: 44, padding: "0 6px", border: "none", background: "transparent", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                Reintentar
-              </button>
             </div>
           )}
         </div>
 
         <div>
           <button
-            onClick={() => setCalcOpen((o) => !o)}
-            disabled={!canCalc}
-            aria-expanded={calcOpen}
-            style={{ minHeight: 44, border: "none", background: "transparent", cursor: canCalc ? "pointer" : "not-allowed", fontFamily: "inherit", color: canCalc ? "var(--accent-ink)" : "var(--text-3)", fontWeight: 800, fontSize: 13.5, padding: "0 2px", textAlign: "left" }}
+            onClick={() => setHowOpen((o) => !o)}
+            aria-expanded={howOpen}
+            style={{ minHeight: 44, display: "flex", alignItems: "center", gap: 4, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", color: "var(--accent-ink)", fontWeight: 800, fontSize: 13.5, padding: "0 2px", textAlign: "left" }}
           >
-            Calcularlo desde lo que tengo hoy
+            Cómo se calcula
+            <Icon name={howOpen ? "ChevronUp" : "ChevronDown"} size={15} stroke={2.4} color="var(--accent-ink)" />
           </button>
-          {!canCalc && (
-            <div className="caption" style={{ color: "var(--text-3)" }}>
-              {carryOver ? "Disponible cuando termine de cargar el historial." : "Activá el saldo acumulado para usarlo."}
-            </div>
-          )}
-          {calcOpen && canCalc && (
-            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <input
-                aria-label="Plata que tenés hoy"
-                inputMode="decimal"
-                value={todayAmount}
-                onChange={(e) => setTodayAmount(e.target.value)}
-                placeholder="¿Cuánta plata tenés hoy?"
-                style={{ flex: 1, minWidth: 0, minHeight: 48, border: "1px solid var(--line)", background: "var(--bg-2)", borderRadius: 12, padding: "12px 14px", fontFamily: "inherit", fontSize: 16, fontWeight: 700, color: "var(--text)" }}
-              />
-              <button
-                onClick={applyToday}
-                style={{ minHeight: 48, padding: "0 18px", borderRadius: 12, border: "1.5px solid var(--accent)", background: "var(--accent-soft)", color: "var(--accent-ink)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
-              >
-                Calcular
-              </button>
+          {howOpen && (
+            <div className="caption" style={{ display: "flex", flexDirection: "column", gap: 6, lineHeight: 1.5 }}>
+              <span>Disponible hoy = saldo inicial + ingresos − gastos de todo lo fechado hasta hoy.</span>
+              <span>
+                Saldo inicial guardado: <strong style={{ color: "var(--text)" }}>{initialBalance === null ? "…" : fmt(initialBalance, currency)}</strong>. Se calcula solo al guardar lo que tenés hoy, y puede ser negativo.
+              </span>
+              {available.status === "ready" && available.futureCount > 0 && (
+                <span>
+                  Hay {available.futureCount} {available.futureCount === 1 ? "movimiento con fecha futura" : "movimientos con fecha futura"}: se cuentan el día que llegan.
+                </span>
+              )}
+              {currencies.length > 1 && <span>Sumamos movimientos en {currencies.join(" y ")} sin convertir.</span>}
             </div>
           )}
         </div>
@@ -346,16 +402,6 @@ function SaldoSection() {
 
 export function Ajustes() {
   const { theme, setTheme, dashStyle, setDashStyle, accent, setAccent, currency, setCurrency, setScreen } = useStore();
-  const [loggingOut, setLoggingOut] = useState(false);
-
-  async function logout() {
-    setLoggingOut(true);
-    try {
-      await fetch("/api/auth", { method: "DELETE" });
-    } finally {
-      window.location.href = "/login";
-    }
-  }
 
   return (
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 18px 28px" }}>
@@ -380,7 +426,7 @@ export function Ajustes() {
         </Row>
 
         <Row label="Acento">
-          <Pills label="Acento" value={accent} onChange={(v) => setAccent(v as Accent)} options={[{ value: "verde", label: "Verde" }, { value: "teal", label: "Turquesa" }, { value: "bosque", label: "Bosque" }]} />
+          <Pills label="Acento" value={accent} onChange={(v) => setAccent(v as Accent)} options={[{ value: "verde", label: "Verde" }, { value: "teal", label: "Turquesa" }, { value: "grafito", label: "Grafito" }]} />
         </Row>
 
         <Row label="Estilo del resumen" hint="Cómo se ve el Resumen en el celular.">
@@ -394,17 +440,6 @@ export function Ajustes() {
         <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
 
         <MantenimientoSection />
-
-        <div style={{ height: 1, background: "var(--line)", margin: "4px 0" }} />
-
-        <button
-          onClick={logout}
-          disabled={loggingOut}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 9, padding: "13px", borderRadius: 12, border: "1px solid var(--line)", background: "var(--surface)", color: "var(--expense)", fontWeight: 800, fontSize: 14.5, cursor: "pointer", fontFamily: "inherit" }}
-        >
-          <Icon name="LogOut" size={18} stroke={2.2} color="var(--expense)" />
-          Cerrar sesión
-        </button>
       </div>
     </div>
   );

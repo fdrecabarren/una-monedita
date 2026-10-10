@@ -4,38 +4,51 @@ import { useMemo, useState } from "react";
 import { useStore, type UISub, type TxType } from "./store";
 import { CatBubble, Icon } from "./Icon";
 import { fmt, fmtDayMonth } from "@/lib/format";
-import { monthlyEquivalent, todayISO } from "@/lib/recurrence";
+import { monthlyEquivalent, monthStatus, monthCounter, type SubMonthKind } from "@/lib/recurrence";
 import { SubEditor, type EditTarget } from "./modal-recurrente";
+import { MONTHS_FULL } from "./ui";
 
-type Tone = "late" | "due" | "paid" | "idle";
-
-// Estado de un fijo derivado solo de sus fechas (no hay nada automático):
-// - vence hoy o ya venció            → "Pendiente"
-// - ya se registró el período actual → "Pagado <fecha del último pago>"
-// - todavía no le toca               → "Próximo <vencimiento>"
-function statusOf(sub: UISub, today: string): { label: string; tone: Tone } {
-  if (sub.status === "Pausada") return { label: "Pausado", tone: "idle" };
-  const next = sub.nextChargeDate?.slice(0, 10) ?? null;
-  const last = sub.lastChargedDate?.slice(0, 10) ?? null;
-  if (next && next <= today) return { label: `Pendiente · vence ${fmtDayMonth(next)}`, tone: next < today ? "late" : "due" };
-  if (last) return { label: `Pagado ${fmtDayMonth(last)}`, tone: "paid" };
-  if (next) return { label: `Próximo ${fmtDayMonth(next)}`, tone: "idle" };
-  return { label: "Sin pagos", tone: "idle" };
-}
-
-const TONE_COLOR: Record<Tone, string> = {
+const TONE_COLOR: Record<SubMonthKind, string> = {
   late: "var(--expense)",
-  due: "var(--text-2)",
+  today: "var(--text-2)",
+  pending: "var(--text-2)",
   paid: "var(--accent-ink)",
-  idle: "var(--text-3)",
+  later: "var(--text-3)",
+  none: "var(--text-3)",
+  paused: "var(--text-3)",
 };
+
+// Estado de un fijo en el MES actual (ver monthStatus en lib/recurrence): el
+// contador y las filas arrancan de cero al cambiar de mes porque se calculan
+// contra el mes calendario, no contra "alguna vez se pagó".
+function statusOf(sub: UISub, today: string): { label: string; kind: SubMonthKind } {
+  const st = monthStatus(sub, today);
+  const d = st.date ? fmtDayMonth(st.date) : "";
+  switch (st.kind) {
+    case "late":
+      return { label: `Pendiente · venció ${d}`, kind: st.kind };
+    case "today":
+      return { label: "Pendiente · vence hoy", kind: st.kind };
+    case "pending":
+      return { label: `Vence ${d}`, kind: st.kind };
+    case "paid":
+      return { label: `${sub.type === "income" ? "Cobrado" : "Pagado"} ${d}`, kind: st.kind };
+    case "later":
+      return { label: `Próximo ${d}`, kind: st.kind };
+    case "paused":
+      return { label: "Pausado", kind: st.kind };
+    default:
+      return { label: "Sin fecha", kind: st.kind };
+  }
+}
 
 function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEdit: () => void; onPay: () => void }) {
   const { byId } = useStore();
   const cat = sub.cat ? byId[sub.cat] : null;
   const paused = sub.status === "Pausada";
   const st = statusOf(sub, today);
-  const paid = st.tone === "paid";
+  // el ✓ se destaca cuando hay algo para registrar este mes
+  const actionable = st.kind === "late" || st.kind === "today" || st.kind === "pending";
   const freq = sub.frequency !== "Mensual" ? `${sub.frequency} · ` : "";
 
   return (
@@ -58,7 +71,7 @@ function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEd
         <CatBubble icon={cat?.icon || "Repeat"} color={cat?.color || "#9aa0a6"} size={36} stroke={2} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 700, fontSize: 14, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub.name}</div>
-          <div style={{ fontSize: 12, color: TONE_COLOR[st.tone], fontWeight: 600, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 12, color: TONE_COLOR[st.kind], fontWeight: 600, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {freq}
             {st.label}
           </div>
@@ -73,9 +86,9 @@ function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEd
           className="icon-btn"
           title="Registrar pago"
           aria-label="Registrar pago"
-          style={{ width: 44, height: 44, borderRadius: 12, background: paid ? "var(--bg-2)" : "var(--accent-soft)", flex: "0 0 auto" }}
+          style={{ width: 44, height: 44, borderRadius: 12, background: actionable ? "var(--accent-soft)" : "var(--bg-2)", flex: "0 0 auto" }}
         >
-          <Icon name="Check" size={18} stroke={2.4} color={paid ? "var(--text-3)" : "var(--accent-ink)"} />
+          <Icon name="Check" size={18} stroke={2.4} color={actionable ? "var(--accent-ink)" : "var(--text-3)"} />
         </button>
       )}
     </div>
@@ -83,28 +96,29 @@ function SubRow({ sub, today, onEdit, onPay }: { sub: UISub; today: string; onEd
 }
 
 export function Recurrentes() {
-  const { subscriptions, openConfirmSub, currency } = useStore();
+  const { subscriptions, openConfirmSub, currency, today } = useStore();
   const [editing, setEditing] = useState<EditTarget>(null);
   const [newType, setNewType] = useState<TxType>("expense");
 
-  const today = todayISO();
 
   // Una sola lista: activos por próximo vencimiento, pausados al final.
   // Los cancelados no se muestran.
-  const { list, activas, pagados } = useMemo(() => {
+  const { list, activas } = useMemo(() => {
     const byDue = (a: UISub, b: UISub) => (a.nextChargeDate ?? "").localeCompare(b.nextChargeDate ?? "");
     const activas = subscriptions.filter((s) => s.status === "Activa").sort(byDue);
     const pausadas = subscriptions.filter((s) => s.status === "Pausada").sort((a, b) => a.name.localeCompare(b.name, "es"));
-    const pagados = activas.filter((s) => statusOf(s, today).tone === "paid").length;
-    return { list: [...activas, ...pausadas], activas, pagados };
-  }, [subscriptions, today]);
+    return { list: [...activas, ...pausadas], activas };
+  }, [subscriptions]);
+
+  const { paid: pagados, due } = useMemo(() => monthCounter(subscriptions, today), [subscriptions, today]);
+  const monthName = MONTHS_FULL[Number(today.slice(5, 7)) - 1].toLowerCase();
 
   const monthlyTotal = useMemo(
     () => activas.filter((s) => s.type === "expense").reduce((sum, s) => sum + monthlyEquivalent(s.amount, s), 0),
     [activas]
   );
 
-  const allPaid = activas.length > 0 && pagados === activas.length;
+  const allPaid = due > 0 && pagados === due;
 
   return (
     <div className="app-scroll" style={{ height: "100%", overflowY: "auto", padding: "8px 16px 24px" }}>
@@ -115,8 +129,11 @@ export function Recurrentes() {
             ≈ {fmt(monthlyTotal, currency)}
           </div>
         </div>
-        {activas.length > 0 && (
+        {due > 0 && (
           <div
+            title={`Fijos de ${monthName}: ${pagados} de ${due} pagados`}
+            aria-label={`Fijos de ${monthName}: ${pagados} de ${due} pagados`}
+            role="status"
             style={{
               padding: "6px 12px",
               borderRadius: 999,
@@ -127,7 +144,7 @@ export function Recurrentes() {
               flex: "0 0 auto",
             }}
           >
-            {pagados}/{activas.length} pagados
+            {pagados}/{due} pagados
           </div>
         )}
       </div>

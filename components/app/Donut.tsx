@@ -1,12 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { createContext, type ReactNode } from "react";
 
 export interface Segment {
   value: number;
   color: string;
   cat: string;
 }
+
+// Ancho útil (px) del hueco del anillo: lo que mide el contenido del centro sin
+// tocar el aro. CenterBalance lo usa para ajustar el tamaño de la cifra.
+export const DonutInner = createContext<number | null>(null);
 
 export function Donut({
   segments,
@@ -85,7 +89,9 @@ export function Donut({
             padding: thickness + 6,
           }}
         >
-          <div style={{ width: "100%" }}>{children}</div>
+          <DonutInner.Provider value={size - 2 * (thickness + 6)}>
+            <div style={{ width: "100%" }}>{children}</div>
+          </DonutInner.Provider>
         </div>
       )}
     </div>

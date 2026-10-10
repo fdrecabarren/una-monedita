@@ -42,7 +42,7 @@ function DayRow({ x, cat, onClick }: { x: UITx; cat: UICategory; onClick: () => 
 }
 
 export function Calendario() {
-  const { transactions, byId, month, year, sim, setSim, openEntry, openEdit, mode, currency, carryOver, balanceBefore } = useStore();
+  const { transactions, byId, month, year, sim, setSim, openEntry, openEdit, mode, currency, balanceBefore } = useStore();
   const autoWide = useIsWide();
   const wide = mode ? mode === "desktop" : autoWide;
 
@@ -103,15 +103,14 @@ export function Calendario() {
     else mExp += t.amount;
   });
   const monthNet = mInc - mExp;
-  // Saldo del mes y del día (null mientras el historial no esté listo o con el
-  // acumulado apagado). El mes en curso se cuenta hasta hoy, igual que el
+  // Saldo del mes y del día (null mientras el historial no esté listo). El mes en curso se cuenta hasta hoy, igual que el
   // "Disponible hoy" del Resumen; un mes pasado, al cierre; uno futuro, previsto.
   const tomorrow = addDays(startOfDay(today), 1);
   const monthIsFuture = new Date(year, month, 1).getTime() > today.getTime();
-  const monthClosing = carryOver ? balanceBefore(isThisMonth ? tomorrow : new Date(year, month + 1, 1)) : null;
+  const monthClosing = balanceBefore(isThisMonth ? tomorrow : new Date(year, month + 1, 1));
   const monthClosingLabel = isThisMonth ? "Disponible hoy" : monthIsFuture ? "Saldo previsto" : "Saldo al cierre";
   const dayNet = dInc - dExp;
-  const dayClosing = carryOver ? balanceBefore(new Date(year, month, selDay + 1)) : null;
+  const dayClosing = balanceBefore(new Date(year, month, selDay + 1));
   const dayClosingLabel = new Date(year, month, selDay).getTime() > today.getTime() ? "Saldo previsto" : "Saldo al cierre";
 
   if (sim === "loading") return <StateView kind="loading" />;

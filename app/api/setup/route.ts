@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
-  createSessionTokenWithCreds,
-  COOKIE_NAME,
-  MAX_AGE,
+  createNotionCookie,
+  notionCookieOptions,
+  notionCookieClearOptions,
+  NOTION_COOKIE,
+  LEGACY_COOKIE,
   type NotionCreds,
 } from "@/lib/auth/session";
+import { checkRateLimit, clientIp } from "@/lib/auth/rate-limit";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +17,9 @@ const NOTION_VERSION = "2022-06-28";
 const BodySchema = z.object({
   notionToken: z.string().min(10),
   pageUrl: z.string().min(10),
+  // "Recordar en este dispositivo": cookie de 400 días. Sin recordar, se borra al
+  // cerrar el navegador (y vence a las 24 h).
+  remember: z.boolean().default(true),
 });
 
 // Map of database title (as shown in Notion) → key in NotionCreds.dbIds
@@ -41,13 +47,24 @@ interface ChildBlock {
   child_database?: { title: string };
 }
 
+// Conectar Notion ES el ingreso, así que esta ruta es pública (el proxy ya cortó el
+// CSRF antes de llegar acá). Cada intento valida un token contra Notion: se limita
+// por IP para que no sirva de probador de tokens robados.
 export async function POST(request: Request) {
+  // segunda capa por si algo se saltea el proxy: solo JSON
+  if (!(request.headers.get("content-type") ?? "").toLowerCase().startsWith("application/json")) {
+    return NextResponse.json({ error: "El contenido debe ser application/json" }, { status: 415 });
+  }
+  if (!checkRateLimit("setup:" + clientIp(request), 10, 15 * 60 * 1000)) {
+    return NextResponse.json({ error: "Demasiados intentos. Esperá 15 minutos." }, { status: 429 });
+  }
+
   const body = await request.json().catch(() => null);
   const parsed = BodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Datos inválidos" }, { status: 400 });
   }
-  const { notionToken, pageUrl } = parsed.data;
+  const { notionToken, pageUrl, remember } = parsed.data;
 
   const pageId = parsePageId(pageUrl);
   if (!pageId) {
@@ -125,7 +142,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 4. Issue a session token carrying the discovered credentials.
+  // 4. Cookie cifrada con las credenciales descubiertas (única credencial de la app).
   const creds: NotionCreds = {
     token: notionToken,
     dbIds: {
@@ -137,15 +154,21 @@ export async function POST(request: Request) {
       fxRates: found.fxRates!,
     },
   };
-  const jwt = await createSessionTokenWithCreds(creds);
+  const cookie = await createNotionCookie(creds, remember);
 
   const res = NextResponse.json({ ok: true });
-  res.cookies.set(COOKIE_NAME, jwt, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    maxAge: MAX_AGE,
-    path: "/",
-  });
+  res.cookies.set(NOTION_COOKIE, cookie, notionCookieOptions(remember, new URL(request.url).protocol === "https:"));
+  // la cookie de la versión con contraseña ya no se usa
+  res.cookies.delete(LEGACY_COOKIE);
+  return res;
+}
+
+// Desconectar este dispositivo: borra la cookie (idempotente). El token sigue siendo
+// válido en Notion: si se pierde un dispositivo hay que regenerarlo en
+// notion.so/my-integrations.
+export async function DELETE(request: Request) {
+  const res = NextResponse.json({ ok: true });
+  res.cookies.set(NOTION_COOKIE, "", notionCookieClearOptions(new URL(request.url).protocol === "https:"));
+  res.cookies.delete(LEGACY_COOKIE);
   return res;
 }
