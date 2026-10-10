@@ -687,8 +687,11 @@ export function StoreProvider({
       const res = await fetch(input, init);
       if (res.status === 401 && !disconnectHandled.current) {
         disconnectHandled.current = true;
+        // token rechazado por Notion (regenerado / revocado): /setup pide el nuevo
+        const body = await res.clone().json().catch(() => null);
+        const reason = body?.code === "notion_token_invalid" ? "revoked" : "expired";
         showNotice("Notion se desconectó. Este cambio no se guardó.");
-        setTimeout(() => location.replace("/setup?reason=expired"), 1800);
+        setTimeout(() => location.replace(`/setup?reason=${reason}`), 1800);
       }
       return res;
     },
@@ -972,10 +975,10 @@ export function StoreProvider({
   const setAvailableToday = useCallback<StoreValue["setAvailableToday"]>(
     async (amount) => {
       if (available.status !== "ready") throw new Error("Todavía se está calculando tu saldo.");
-      if (allTx.some((t) => t.id.startsWith("tmp-"))) throw new Error("Esperá a que se guarde el último movimiento.");
+      if (hasPendingTx) throw new Error("Esperá a que se guarde el último movimiento.");
       await setInitialBalance(initialForAvailable(allTx, amount, parseDate(today)));
     },
-    [available.status, allTx, today, setInitialBalance]
+    [available.status, hasPendingTx, allTx, today, setInitialBalance]
   );
 
   // Saldo del período visible (hoja "Tu saldo").

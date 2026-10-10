@@ -113,7 +113,7 @@ function ConnectFlow() {
       });
       if (res.ok) {
         try {
-          sessionStorage.setItem(JUST_CONNECTED, "1");
+          sessionStorage.setItem(JUST_CONNECTED, String(Date.now()));
         } catch {
           /* ignore */
         }
@@ -237,9 +237,11 @@ export function SetupForm({
   const [lostCookie, setLostCookie] = useState(false);
   useEffect(() => {
     try {
-      const mark = sessionStorage.getItem(JUST_CONNECTED);
+      const mark = Number(sessionStorage.getItem(JUST_CONNECTED));
       if (mark) {
         sessionStorage.removeItem(JUST_CONNECTED);
+        // solo cuenta si volvimos enseguida (no horas después en la misma pestaña)
+        if (Date.now() - mark > 30_000) return;
         // eslint-disable-next-line react-hooks/set-state-in-effect -- lee sessionStorage (no existe en el servidor)
         if (!connected && reason === "missing") setLostCookie(true);
       }

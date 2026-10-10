@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCategories, createCategory } from "@/lib/notion/categories";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { withNotionErrors } from "@/lib/notion/errors";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +13,10 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const kind = searchParams.get("kind");
-  const cats = await getCategories(
-    kind === "Ingreso" || kind === "Gasto" ? kind : undefined,
-    creds
-  );
-  return NextResponse.json(cats);
+  return withNotionErrors("categories:get", "No se pudieron cargar las categorías", async () => {
+    const cats = await getCategories(kind === "Ingreso" || kind === "Gasto" ? kind : undefined, creds);
+    return NextResponse.json(cats);
+  });
 }
 
 const CreateSchema = z.object({
@@ -39,6 +39,8 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const cat = await createCategory(parsed.data, creds);
-  return NextResponse.json(cat, { status: 201 });
+  return withNotionErrors("categories:create", "No se pudo crear la categoría", async () => {
+    const cat = await createCategory(parsed.data, creds);
+    return NextResponse.json(cat, { status: 201 });
+  });
 }

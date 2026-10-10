@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDatabaseSchema, updateDatabaseSchema } from "@/lib/notion/client";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
+import { withNotionErrors } from "@/lib/notion/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -23,18 +24,20 @@ export async function POST(request: Request) {
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
 
   const dbId = creds.dbIds.subscriptions;
-  const schema = await getDatabaseSchema(dbId, creds.token);
-  const existing = new Set(Object.keys(schema.properties));
+  return withNotionErrors("subscriptions:migrate", "No se pudo preparar Notion", async () => {
+    const schema = await getDatabaseSchema(dbId, creds.token);
+    const existing = new Set(Object.keys(schema.properties));
 
-  const missing: Record<string, unknown> = {};
-  for (const [name, def] of Object.entries(REQUIRED_PROPS)) {
-    if (!existing.has(name)) missing[name] = def;
-  }
+    const missing: Record<string, unknown> = {};
+    for (const [name, def] of Object.entries(REQUIRED_PROPS)) {
+      if (!existing.has(name)) missing[name] = def;
+    }
 
-  if (Object.keys(missing).length === 0) {
-    return NextResponse.json({ ok: true, added: [] });
-  }
+    if (Object.keys(missing).length === 0) {
+      return NextResponse.json({ ok: true, added: [] });
+    }
 
-  await updateDatabaseSchema(dbId, missing, creds.token);
-  return NextResponse.json({ ok: true, added: Object.keys(missing) });
+    await updateDatabaseSchema(dbId, missing, creds.token);
+    return NextResponse.json({ ok: true, added: Object.keys(missing) });
+  });
 }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getBudgetsByMonth, createBudget } from "@/lib/notion/budgets";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { isNotionUnauthorized, notionErrorResponse } from "@/lib/notion/errors";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
     const budgets = await getBudgetsByMonth(year, month, creds);
     return NextResponse.json({ budgets });
   } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("budgets:get", err);
     return NextResponse.json({ error: "Error leyendo Budgets en Notion", detail: String(err) }, { status: 502 });
   }
 }
@@ -55,6 +57,7 @@ export async function POST(request: Request) {
     const budget = await createBudget(parsed.data, creds);
     return NextResponse.json(budget, { status: 201 });
   } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("budgets:create", err);
     return NextResponse.json({ error: "Error creando el presupuesto en Notion", detail: String(err) }, { status: 502 });
   }
 }

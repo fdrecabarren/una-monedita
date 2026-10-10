@@ -44,7 +44,7 @@ NOTION_DB_BUDGETS=36d5c48e-39b6-81b5-be41-ed826914438b
 NOTION_DB_FX_RATES=36d5c48e-39b6-8195-b489-d81b1bd2b9c8
 ```
 
-`NOTION_TOKEN` NO va acá en texto plano — vive solo en `.env.local` (desarrollo en
+`NOTION_TOKEN` NO va acá en texto plano: vive solo en `.env.local` (desarrollo en
 localhost). En Vercel NO se define: cada persona conecta su Notion en `/setup`. Esquema completo de las 6 bases (props, tipos, valores válidos, ejemplos
 de payload) documentado para agentes en [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md)
 y espejado como página "📖 Guía del sistema (para agentes)" dentro de la página
@@ -67,7 +67,7 @@ principal de Notion (publicada por `scripts/publish-notion-guide.ts`).
 - CSRF (necesario porque `/api/setup` es público y las cookies son `SameSite=Lax`): a `/api/*` no se llega navegando cross-site; las escrituras exigen `Sec-Fetch-Site: same-origin` y `Origin` = host (https en producción, `Origin: null` bloqueado); POST/PUT/PATCH exigen `Content-Type: application/json` (415). Todo `fetch` de escritura del cliente debe mandar ese header (también `body: "{}"` en POST sin cuerpo).
 - `/api/setup` POST: valida el token (`users/me`), busca las 6 bases hijas de la página, límite 10 intentos / 15 min por IP, setea la cookie. DELETE: la borra (idempotente). `/api/me` → `{ connected, via: "cookie"|"legacy"|"dev"|null, remember }`.
 - **Desarrollo local:** `devAuthBypass(host)` exige `NODE_ENV=development` + `DEV_AUTH_BYPASS=1` + host `localhost`/`127.0.0.1`/`[::1]`; entonces usa las credenciales de `.env.local`. Nunca definir `DEV_AUTH_BYPASS` ni `NOTION_*` en Vercel.
-- Cliente: cualquier 401 de la API (`HttpError.expired`) = sin conexión; `apiFetch` (store) avisa una vez y hace `location.replace("/setup?reason=expired")`. La página del dashboard redirige a `/setup?reason=revoked` si Notion rechaza el token.
+- Cliente: cualquier 401 de la API (`HttpError.expired`) = sin conexión; `apiFetch` (store) avisa una vez y hace `location.replace("/setup?reason=expired")`, o `reason=revoked` si el cuerpo trae `code: "notion_token_invalid"` (Notion rechazó el token). La página del dashboard también redirige a `/setup?reason=revoked` en ese caso. Las rutas envuelven las llamadas a Notion con `withNotionErrors` / `notionErrorResponse` para que un token rechazado siempre sea 401.
 - `AUTH_COOKIE_SECRET` es la única variable obligatoria (≥ 32 caracteres, distinta del ejemplo). Si cambia, todos los dispositivos se desconectan. Fallos de Notion en la API → `502 {error, code, message}` vía `lib/notion/errors.ts` `notionErrorResponse()` (loguea `[op] failed:`; un `unauthorized` de Notion responde `401 notion_token_invalid`). Las credenciales se `.trim()`-ean.
 
 ## Estructura de páginas
@@ -149,7 +149,7 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
   Subscriptions si faltan; idempotente).
 - La guía para agentes (Hermes) se publica/actualiza desde Ajustes →
   Mantenimiento → **Publicar guía para agentes** (`POST /api/notion/guide`,
-  usa las creds de la conexión de este dispositivo — no requiere `NOTION_TOKEN`).
+  usa las creds de la conexión de este dispositivo; no requiere `NOTION_TOKEN`).
   Fuente: [docs/NOTION-SCHEMA.md](docs/NOTION-SCHEMA.md).
 
 ## Resumen por rango de fechas
@@ -205,11 +205,11 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 ## Componentes clave (`components/app/`)
 
 - `AppRoot.tsx` — StoreProvider + Shell, recibe initial data del server
-- `store.tsx` — context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, `available`/`today`/`setAvailableToday`, theme/dashStyle/accent). Todo `fetch` pasa por `apiFetch`: un 401 = Notion desconectado → aviso + `location.replace("/setup?reason=expired")`. Los errores de mutación llegan al toast con el motivo real del servidor (`HttpError` / `failureText`)
+- `store.tsx`: context store wired a API (CRUD tx/categorías/fijos/presupuestos, rango de fechas, cache por año, `available`/`today`/`setAvailableToday`, theme/dashStyle/accent). Todo `fetch` pasa por `apiFetch`: un 401 = Notion desconectado → aviso + `location.replace("/setup?reason=expired|revoked")`. Los errores de mutación llegan al toast con el motivo real del servidor (`HttpError` / `failureText`)
 - `Shell.tsx` — layout responsive (Sidebar desktop / BottomNav móvil), nav, ThemeToggle
 - `Icon.tsx` — `Icon` (Lucide vía registry) + `CatBubble`
-- `Donut.tsx` — donut SVG segmentado; expone `DonutInner` (ancho del hueco) para que `CenterBalance` ajuste la cifra
-- `ui.tsx` — SegmentedControl (único estilo de selección; PeriodPills, Segmented), MonthNav (Calendario) / RangeNav (Resumen), CenterBalance (total del foco que se ajusta al hueco del anillo, sin saldo), ActionButton, Toast, StateView
+- `Donut.tsx`: donut SVG segmentado; expone `DonutInner` (ancho del hueco) para que `CenterBalance` ajuste la cifra
+- `ui.tsx`: SegmentedControl (único estilo de selección; PeriodPills, Segmented), MonthNav (Calendario) / RangeNav (Resumen), CenterBalance (total del foco que se ajusta al hueco del anillo, sin saldo), ActionButton, Toast, StateView
 - `Sheet.tsx` (Sheet, SheetHeader, ConfirmRow), `Coin.tsx`, `balance.tsx` (PeriodSummary, Monedero, BalanceCard, BalanceSheet)
 - `screen-{dashboard,movimientos,calendario,categorias,recurrentes,ajustes}.tsx`
 - `modal-new-entry.tsx` (calc), `modal-icon-store.tsx` (Tienda), `modal-recurrente.tsx` (fijos), `modal-range.tsx` (selector de rango del Resumen)
@@ -217,8 +217,8 @@ SPA: única ruta visible `/dashboard` renderiza `<AppRoot>` (server fetch inicia
 - `lib/date-range.ts` — motor puro de rangos de fechas (Día/Semana/Mes/Año/Personalizado) para el Resumen
 - `lib/notion/client.ts` — `queryDatabase()` helper REST
 - `lib/notion/markdown-blocks.ts` — markdown → bloques Notion + publish helpers, usado por `scripts/publish-notion-guide.ts` y `/api/notion/guide`
-- `lib/recurrence.ts` — motor de recurrencia de gastos/ingresos fijos (fechas, estado y contador mensual)
-- `app/setup/` — `page.tsx` (servidor: estado + motivo) y `setup-form.tsx` (cliente: formulario, "Recordar", llavero)
+- `lib/recurrence.ts`: motor de recurrencia de gastos/ingresos fijos (fechas, estado y contador mensual)
+- `app/setup/`: `page.tsx` (servidor: estado + motivo) y `setup-form.tsx` (cliente: formulario, "Recordar", llavero)
 - `lib/notion/budgets.ts` — CRUD de presupuestos mensuales por categoría
 
 ## Vercel deployment — caveats

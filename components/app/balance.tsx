@@ -74,7 +74,8 @@ export function PeriodSummary({ large = false }: { large?: boolean }) {
   const short = {
     income: fmtShort(totals.income, currency),
     expense: fmtShort(totals.expense, currency),
-    balance: fmtShort(totals.balance, currency),
+    // fmtShort no pone "+": se agrega a mano para que coincida con el monto completo
+    balance: (totals.balance > 0 ? "+\u00a0" : "") + fmtShort(totals.balance, currency),
   };
 
   // Ancho útil de cada celda según la medida real de la fila (columnas 2fr | 1,15fr

@@ -4,6 +4,7 @@ import path from "node:path";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { getDatabaseParentPageId } from "@/lib/notion/client";
 import { publishMarkdownPage } from "@/lib/notion/markdown-blocks";
+import { isNotionUnauthorized, notionErrorResponse } from "@/lib/notion/errors";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,13 @@ export async function POST(request: Request) {
   const creds = await getNotionCredsFromRequest(request);
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
 
-  const parentId = await getDatabaseParentPageId(creds.dbIds.transactions, creds.token).catch(() => null);
+  let parentId: string | null;
+  try {
+    parentId = await getDatabaseParentPageId(creds.dbIds.transactions, creds.token);
+  } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("guide:parent", err);
+    parentId = null;
+  }
   if (!parentId) {
     return NextResponse.json(
       { error: "No pude resolver la página principal de Notion (padre de Transactions)." },
@@ -36,6 +43,7 @@ export async function POST(request: Request) {
     const result = await publishMarkdownPage(creds.token, parentId, PAGE_TITLE, "📖", markdown);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("guide:publish", err);
     return NextResponse.json({ error: "Error publicando en Notion", detail: String(err) }, { status: 502 });
   }
 }

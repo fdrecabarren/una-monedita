@@ -24,3 +24,13 @@ export function notionErrorResponse(op: string, err: unknown, fallback = "No se 
   const message = err instanceof Error ? err.message.slice(0, 300) : undefined;
   return NextResponse.json({ error: fallback, code, message }, { status: 502 });
 }
+
+// Corre el cuerpo de un handler y convierte cualquier fallo de Notion en la
+// respuesta uniforme de arriba (incluido el 401 de token rechazado).
+export async function withNotionErrors(op: string, fallback: string, fn: () => Promise<Response>): Promise<Response> {
+  try {
+    return await fn();
+  } catch (err) {
+    return notionErrorResponse(op, err, fallback);
+  }
+}

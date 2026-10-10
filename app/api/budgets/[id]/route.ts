@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { updateBudget } from "@/lib/notion/budgets";
 import { getNotionCredsFromRequest } from "@/lib/auth/session";
 import { checkMutationLimit } from "@/lib/auth/rate-limit";
+import { isNotionUnauthorized, notionErrorResponse } from "@/lib/notion/errors";
 import { z } from "zod";
 
 export const dynamic = "force-dynamic";
@@ -33,6 +34,7 @@ export async function PATCH(
     const budget = await updateBudget(id, parsed.data, creds);
     return NextResponse.json(budget);
   } catch (err) {
+    if (isNotionUnauthorized(err)) return notionErrorResponse("budgets:update", err);
     return NextResponse.json({ error: "Error actualizando el presupuesto en Notion", detail: String(err) }, { status: 502 });
   }
 }
