@@ -10,18 +10,14 @@ export const dynamic = "force-dynamic";
 const PAGE_TITLE = "📖 Guía del sistema (para agentes)";
 
 // Publishes docs/NOTION-SCHEMA.md as a child page under the user's "Una
-// Monedita" main page, using their own session creds (works even when the
-// server's NOTION_TOKEN / NOTION_PARENT_PAGE_ID env vars are stale). Mirrors
-// scripts/publish-notion-guide.ts, which does the same thing from the CLI
-// with env-var creds — both call the shared lib/notion/markdown-blocks.ts.
+// Monedita" main page, using the creds of the connected Notion (cookie). Mirrors
+// scripts/publish-notion-guide.ts, which does the same thing from the CLI with
+// env-var creds: both call the shared lib/notion/markdown-blocks.ts.
 export async function POST(request: Request) {
   const creds = await getNotionCredsFromRequest(request);
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
 
-  const parentId =
-    (await getDatabaseParentPageId(creds.dbIds.transactions, creds.token).catch(() => null)) ??
-    process.env.NOTION_PARENT_PAGE_ID ??
-    null;
+  const parentId = await getDatabaseParentPageId(creds.dbIds.transactions, creds.token).catch(() => null);
   if (!parentId) {
     return NextResponse.json(
       { error: "No pude resolver la página principal de Notion (padre de Transactions)." },

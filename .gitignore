@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# la plantilla de variables SÍ se commitea (sin valores reales)
+!.env.example
 
 # MCP config (contains tokens)
 .mcp.json

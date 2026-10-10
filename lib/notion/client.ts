@@ -1,30 +1,11 @@
 import { Client } from "@notionhq/client";
 
-let envClient: Client | null = null;
-
-// When a token is provided (per-user JWT creds) build a fresh client — caching
-// across users would leak credentials. Without a token, cache the env-var client.
-export function getNotionClient(token?: string): Client {
-  if (token) {
-    return new Client({ auth: token });
-  }
-  if (!envClient) {
-    const envToken = process.env.NOTION_TOKEN;
-    if (!envToken) throw new Error("NOTION_TOKEN no configurado en .env.local");
-    envClient = new Client({ auth: envToken });
-  }
-  return envClient;
+// Un cliente por llamada: las credenciales son de cada persona (vienen de su
+// cookie), así que nunca se cachea ni se cae a variables de entorno del servidor.
+export function getNotionClient(token: string): Client {
+  if (!token) throw new Error("Falta el token de Notion");
+  return new Client({ auth: token });
 }
-
-// Database IDs — used as parent when creating pages AND for querying
-export const DB_IDS = {
-  transactions: process.env.NOTION_DB_TRANSACTIONS!,
-  accounts: process.env.NOTION_DB_ACCOUNTS!,
-  categories: process.env.NOTION_DB_CATEGORIES!,
-  subscriptions: process.env.NOTION_DB_SUBSCRIPTIONS!,
-  budgets: process.env.NOTION_DB_BUDGETS!,
-  fxRates: process.env.NOTION_DB_FX_RATES!,
-} as const;
 
 // Query a Notion database via the REST API directly.
 // @notionhq/client v5 removed databases.query in favor of dataSources.query
@@ -38,9 +19,9 @@ export async function queryDatabase(
     page_size?: number;
     start_cursor?: string;
   } = {},
-  token?: string
+  token: string
 ): Promise<{ results: Array<Record<string, unknown>>; next_cursor: string | null; has_more: boolean }> {
-  const authToken = token ?? process.env.NOTION_TOKEN;
+  const authToken = token;
   const body: Record<string, unknown> = {};
   if (options.filter !== undefined) body.filter = options.filter;
   if (options.sorts !== undefined) body.sorts = options.sorts;
@@ -79,9 +60,9 @@ export async function queryDatabase(
 export async function updateDatabaseSchema(
   database_id: string,
   properties: Record<string, unknown>,
-  token?: string
+  token: string
 ): Promise<{ properties: Record<string, unknown> }> {
-  const authToken = token ?? process.env.NOTION_TOKEN;
+  const authToken = token;
   const res = await fetch(`https://api.notion.com/v1/databases/${database_id}`, {
     method: "PATCH",
     headers: {
@@ -102,9 +83,9 @@ export async function updateDatabaseSchema(
 // migration route to decide which properties are already present.
 export async function getDatabaseSchema(
   database_id: string,
-  token?: string
+  token: string
 ): Promise<{ properties: Record<string, { type: string }> }> {
-  const authToken = token ?? process.env.NOTION_TOKEN;
+  const authToken = token;
   const res = await fetch(`https://api.notion.com/v1/databases/${database_id}`, {
     headers: {
       Authorization: `Bearer ${authToken}`,
@@ -123,7 +104,7 @@ export async function getDatabaseSchema(
 // to a user's own "Una Monedita" main page, without hardcoding its ID.
 export async function getDatabaseParentPageId(
   database_id: string,
-  token?: string
+  token: string
 ): Promise<string | null> {
   const schema = await getDatabaseSchema(database_id, token);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

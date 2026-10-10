@@ -1,69 +1,128 @@
 import { NextRequest, NextResponse } from "next/server";
-import { decryptSession, devAuthBypass, COOKIE_NAME } from "@/lib/auth/session";
+import {
+  NOTION_COOKIE,
+  LEGACY_COOKIE,
+  secretProblem,
+  devAuthBypass,
+  getCookie,
+  readNotionCookie,
+  readLegacyCreds,
+  createNotionCookie,
+  notionCookieOptions,
+  notionCookieClearOptions,
+} from "@/lib/auth/session";
+import { csrfVerdict } from "@/lib/auth/csrf";
 
-const PUBLIC_PATHS = ["/login", "/api/auth"];
-// Authenticated users may reach these even without Notion creds configured.
-const SETUP_PATHS = ["/setup", "/api/setup", "/api/me"];
+// Next 16: este archivo se llama proxy.ts y exporta `proxy` (no middleware).
+//
+// Acceso sin contraseña: la cookie con las credenciales de Notion es la única
+// credencial. Orden (importa):
+//   1. secreto de cookies inválido → 503
+//   2. CSRF de /api/* (ANTES del bypass y de las rutas públicas, /api/setup incluida)
+//   3. bypass de desarrollo (solo localhost)
+//   4. rutas públicas: /setup y /api/setup
+//   5. atajos de compatibilidad con la versión con contraseña
+//   6. cookie válida → pasa
+//   7. migración desde la cookie vieja um_session
+//   8. sin credenciales → /setup (páginas) o 401 (API)
 
-// Las llamadas fetch a /api/* con sesión vencida reciben 401 JSON: un redirect
-// a /login hace que el fetch reciba HTML con 200 y el cliente no pueda saber
-// que la sesión venció (solo veía "No se pudo guardar").
-function apiUnauthorized(error: string, clearCookie: boolean): NextResponse {
-  const res = NextResponse.json({ error }, { status: 401 });
-  if (clearCookie) res.cookies.delete(COOKIE_NAME);
-  return res;
+function unauthorizedApi(): NextResponse {
+  return NextResponse.json({ error: "Notion no conectado", code: "notion_disconnected" }, { status: 401 });
 }
 
-function redirectToLogin(req: NextRequest, pathname: string): NextResponse {
-  if (pathname.startsWith("/api/")) return apiUnauthorized("Sesión vencida", true);
-  const loginUrl = new URL("/login", req.url);
-  loginUrl.searchParams.set("from", pathname);
-  const res = NextResponse.redirect(loginUrl);
-  res.cookies.delete(COOKIE_NAME);
-  return res;
+// Header Cookie con la cookie nueva agregada y la vieja quitada: para que handlers y
+// server components vean lo mismo en ESTE pedido (el Set-Cookie recién llega después).
+function rewriteCookieHeader(cookieHeader: string, value: string): string {
+  const kept = cookieHeader
+    .split(";")
+    .map((p) => p.trim())
+    .filter((p) => p && !p.startsWith(`${LEGACY_COOKIE}=`) && !p.startsWith(`${NOTION_COOKIE}=`));
+  return [...kept, `${NOTION_COOKIE}=${value}`].join("; ");
 }
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  const host = req.headers.get("host");
+  const isApi = pathname.startsWith("/api/");
+  const secure = req.nextUrl.protocol === "https:";
 
-  // Bypass de desarrollo local (ver devAuthBypass): sin login y sin cookie.
-  // Imposible de activar en el deploy — allí NODE_ENV siempre es "production".
-  if (devAuthBypass()) {
-    return NextResponse.next();
+  // 1. Sin un secreto válido no se puede ni emitir ni validar ninguna cookie.
+  const problem = secretProblem();
+  if (problem) return new NextResponse(problem, { status: 503 });
+
+  // 2. CSRF
+  if (isApi) {
+    const v = csrfVerdict({
+      method: req.method,
+      pathname,
+      host,
+      origin: req.headers.get("origin"),
+      secFetchSite: req.headers.get("sec-fetch-site"),
+      secFetchMode: req.headers.get("sec-fetch-mode"),
+      contentType: req.headers.get("content-type"),
+      production: process.env.NODE_ENV === "production",
+    });
+    if (!v.ok) {
+      const error = v.code === "csrf" ? "Pedido bloqueado" : "El contenido debe ser application/json";
+      return NextResponse.json({ error, code: v.code }, { status: v.status });
+    }
   }
 
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
-    return NextResponse.next();
+  // 3. Desarrollo local: sin cookie, con las credenciales de .env.local.
+  if (devAuthBypass(host)) return NextResponse.next();
+
+  // 4. Públicas (igualdad exacta: nada de startsWith).
+  if (pathname === "/setup" || pathname === "/api/setup") return NextResponse.next();
+
+  const cookieHeader = req.headers.get("cookie") ?? "";
+  const freshRaw = getCookie(cookieHeader, NOTION_COOKIE);
+  const fresh = freshRaw ? await readNotionCookie(freshRaw) : null;
+  const legacyRaw = getCookie(cookieHeader, LEGACY_COOKIE);
+  const legacy = !freshRaw ? await readLegacyCreds(legacyRaw) : null;
+
+  // 5. Compatibilidad con la versión con contraseña (TODO 2026-11-15: borrar).
+  if (pathname === "/login") {
+    return NextResponse.redirect(new URL(fresh || legacy ? "/" : "/setup", req.url));
+  }
+  if (pathname === "/api/auth") {
+    if (req.method === "DELETE") {
+      // un cliente viejo todavía abierto que toca "Cerrar sesión"
+      const res = NextResponse.json({ ok: true });
+      res.cookies.set(NOTION_COOKIE, "", notionCookieClearOptions(secure));
+      res.cookies.delete(LEGACY_COOKIE);
+      return res;
+    }
+    return NextResponse.json({ error: "Ya no hay contraseña: conectá Notion en /setup" }, { status: 410 });
   }
 
-  // Fail closed: without the secret we cannot validate any session.
-  if (!process.env.AUTH_COOKIE_SECRET) {
-    return new NextResponse("Server misconfigured", { status: 503 });
+  // 6. Conectado.
+  if (fresh) return NextResponse.next();
+
+  // 7. Migración: quien ya estaba conectado con la cookie vieja sigue conectado.
+  if (legacy) {
+    const value = await createNotionCookie(legacy, true);
+    const headers = new Headers(req.headers);
+    headers.set("cookie", rewriteCookieHeader(cookieHeader, value));
+    const res = NextResponse.next({ request: { headers } });
+    res.cookies.set(NOTION_COOKIE, value, notionCookieOptions(true, secure));
+    res.cookies.delete(LEGACY_COOKIE);
+    return res;
   }
 
-  const token = req.cookies.get(COOKIE_NAME)?.value;
-  const session = await decryptSession(token);
-  if (!session) {
-    return redirectToLogin(req, pathname);
-  }
-
-  const onSetupPath = SETUP_PATHS.some((p) => pathname.startsWith(p));
-
-  // Configured if creds live in the session OR the server has env-var creds.
-  const hasCreds = !!session.notionToken || !!process.env.NOTION_TOKEN;
-
-  // Authenticated but unconfigured → force the setup flow (except setup paths).
-  if (!hasCreds && !onSetupPath) {
-    if (pathname.startsWith("/api/")) return apiUnauthorized("Notion no configurado", false);
-    return NextResponse.redirect(new URL("/setup", req.url));
-  }
-
-  // Configured user trying to reach /setup is allowed (re-configure).
-  return NextResponse.next();
+  // 8. Sin credenciales. Se limpian las cookies que no sirvieron.
+  const stale = !!freshRaw || !!legacyRaw;
+  const res = isApi
+    ? unauthorizedApi()
+    : NextResponse.redirect(new URL(`/setup?reason=${stale ? "expired" : "missing"}`, req.url));
+  if (freshRaw) res.cookies.set(NOTION_COOKIE, "", notionCookieClearOptions(secure));
+  if (legacyRaw) res.cookies.delete(LEGACY_COOKIE);
+  return res;
 }
 
 export const config = {
+  // La exclusión por extensión no debe saltear la API: por eso va un matcher aparte.
   matcher: [
-    "/((?!_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|webmanifest)$).*)",
+    "/api/:path*",
+    "/((?!api/|_next/static|_next/image|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|webmanifest)$).*)",
   ],
 };

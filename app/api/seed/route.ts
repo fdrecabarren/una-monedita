@@ -42,10 +42,12 @@ async function seedAll(creds: NotionCreds) {
   }
 }
 
-// GET: seeds the design set if DB empty.
-// GET ?reset=1: archives every existing category, then seeds the design set.
-// Requires a valid session — this endpoint can wipe every category.
-export async function GET(request: Request) {
+// POST: seeds the design set if DB empty.
+// POST ?reset=1: archives every existing category, then seeds the design set.
+// Es POST (con JSON y mismo origen, ver proxy.ts) y no GET: un link de otro sitio no
+// puede archivar todas las categorías. Nadie del cliente lo llama; se corre desde la
+// consola del navegador con la app abierta (ver README).
+export async function POST(request: Request) {
   const creds = await getNotionCredsFromRequest(request);
   if (!creds) return NextResponse.json({ error: "Notion no configurado" }, { status: 401 });
 
