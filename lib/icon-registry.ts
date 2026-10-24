@@ -39,7 +39,7 @@ import {
   // UI
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, X, Check, Delete,
   PenLine, Shapes, Moon, CloudOff, CircleDollarSign, List, Settings, LogOut, Search,
-  Circle, CalendarDays, Database,
+  Circle, CalendarDays, Database, EyeOff,
   // recurrentes
   Repeat, CalendarClock, BellRing, PauseCircle, PlayCircle,
   // filtros
@@ -73,7 +73,7 @@ export const ICONS: Record<string, LucideIcon> = {
   Recycle, Bell, Calendar, Clock,
   ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Plus, Minus, X, Check, Delete,
   PenLine, Shapes, Moon, CloudOff, CircleDollarSign, List, Settings, LogOut, Search,
-  Circle, CalendarDays, Database,
+  Circle, CalendarDays, Database, EyeOff,
   Repeat, CalendarClock, BellRing, PauseCircle, PlayCircle,
   // filtros
   SlidersHorizontal,

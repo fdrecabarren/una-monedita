@@ -90,7 +90,7 @@ function MobileLayout() {
               key={n.id}
               onClick={() => setScreen(n.id)}
               aria-current={on ? "page" : undefined}
-              style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "8px 0 2px", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}
+              style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, padding: "6px 0 0", border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit" }}
             >
               <span
                 style={{ width: 56, height: 30, borderRadius: 15, display: "grid", placeItems: "center", background: on ? "var(--accent-soft)" : "transparent", transition: "background .15s" }}

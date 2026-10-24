@@ -8,7 +8,7 @@
 // del rango que se mira). Balance (diario/semanal/mensual/…) = ingresos − gastos del
 // período. Saldo al inicio = lo que había antes del período.
 
-import { useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useStore, type TxType } from "./store";
 import { Sheet, SheetHeader } from "./Sheet";
 import { Coin } from "./Coin";
@@ -209,37 +209,61 @@ export function PeriodSummary({ large = false }: { large?: boolean }) {
 export function Monedero() {
   const { openEntry, currency, available } = useStore();
   const [open, setOpen] = useState(false);
+  // Ojito: oculta el monto en pantalla (preferencia del dispositivo).
+  const [hidden, setHidden] = useState(false);
+  useEffect(() => {
+    // Leer en el efecto (no en el inicializador) evita el desajuste de hidratación.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setHidden(localStorage.getItem("um:hide-available") === "1"); } catch {}
+  }, []);
+  const toggleHidden = () => {
+    setHidden((h) => {
+      try { localStorage.setItem("um:hide-available", h ? "0" : "1"); } catch {}
+      return !h;
+    });
+  };
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "10px 16px" }}>
-      <ActionButton kind="expense" size={56} onClick={() => openEntry("expense")} />
-      <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 16px" }}>
+      <ActionButton kind="expense" size={46} onClick={() => openEntry("expense")} />
+      <div style={{ flex: 1, minWidth: 0, display: "flex", justifyContent: "center", alignItems: "center", gap: 2 }}>
         {available.status === "error" ? (
           <BalanceError />
         ) : (
-          <button
-            onClick={() => setOpen(true)}
-            aria-haspopup="dialog"
-            aria-label={available.status === "loading" ? "Ver saldo, calculando" : `Ver saldo. Disponible hoy: ${fmt(available.amount, currency)}`}
-            style={{ minHeight: 56, minWidth: 140, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", padding: "2px 6px", color: "var(--text)" }}
-          >
-            <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <Coin size={18} sprout={available.status === "ready" && available.monthNet > 0} />
-              Disponible hoy
-            </span>
-            {available.status === "loading" ? (
-              <span className="skeleton-row" style={{ width: 112, height: 24, borderRadius: 8, marginTop: 4 }} role="status" aria-label="Calculando saldo" />
-            ) : (
-              <span
-                className="num-coin"
-                style={{ fontSize: "clamp(22px, 7vw, 26px)", lineHeight: 1.15, color: available.amount < 0 ? "var(--expense)" : "var(--text)" }}
-              >
-                {fmt(available.amount, currency)}
+          <>
+            <button
+              onClick={() => setOpen(true)}
+              aria-haspopup="dialog"
+              aria-label={available.status === "loading" ? "Ver saldo, calculando" : hidden ? "Ver saldo" : `Ver saldo. Disponible hoy: ${fmt(available.amount, currency)}`}
+              style={{ minHeight: 44, minWidth: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 0, border: "none", background: "transparent", cursor: "pointer", fontFamily: "inherit", padding: "2px 4px", color: "var(--text)" }}
+            >
+              <span className="eyebrow" style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5 }}>
+                <Coin size={14} sprout={available.status === "ready" && available.monthNet > 0} />
+                Disponible hoy
               </span>
-            )}
-          </button>
+              {available.status === "loading" ? (
+                <span className="skeleton-row" style={{ width: 96, height: 20, borderRadius: 8, marginTop: 3 }} role="status" aria-label="Calculando saldo" />
+              ) : (
+                <span
+                  className="num-coin"
+                  style={{ fontSize: "clamp(18px, 5.6vw, 21px)", lineHeight: 1.15, whiteSpace: "nowrap", color: !hidden && available.amount < 0 ? "var(--expense)" : "var(--text)" }}
+                >
+                  {hidden ? "••••••" : fmt(available.amount, currency)}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={toggleHidden}
+              aria-label={hidden ? "Mostrar disponible" : "Ocultar disponible"}
+              aria-pressed={hidden}
+              className="icon-btn"
+              style={{ width: 36, height: 36, minWidth: 36, display: "grid", placeItems: "center", border: "none", background: "transparent", cursor: "pointer", padding: 0, alignSelf: "flex-end" }}
+            >
+              <Icon name={hidden ? "EyeOff" : "Eye"} size={17} stroke={2.2} color="var(--text-2)" />
+            </button>
+          </>
         )}
       </div>
-      <ActionButton kind="income" size={56} onClick={() => openEntry("income")} />
+      <ActionButton kind="income" size={46} onClick={() => openEntry("income")} />
       {open && <BalanceSheet onClose={() => setOpen(false)} />}
     </div>
   );
