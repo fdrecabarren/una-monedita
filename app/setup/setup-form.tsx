@@ -268,7 +268,7 @@ export function SetupForm({
       className="app-root"
       data-theme="light"
       data-accent="verde"
-      style={{ position: "relative", minHeight: "100vh", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, background: "var(--bg)", overflow: "hidden" }}
+      style={{ position: "relative", minHeight: "100dvh", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, background: "var(--bg)", overflow: "hidden" }}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img

@@ -531,13 +531,25 @@ export function StoreProvider({
     if (!prefsReady) return;
     const root = document.documentElement;
     root.dataset.accent = accent;
+    // La barra de Chrome en Android (y la de Safari hasta iOS 18) se tiñe con
+    // theme-color: se iguala al fondo real para que coincida aunque el tema se
+    // elija a mano (las metas de app/layout.tsx solo siguen al sistema).
+    const syncThemeColor = () => {
+      const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
+      if (!bg) return;
+      document.querySelectorAll<HTMLMetaElement>('meta[name="theme-color"]').forEach((m) => {
+        m.content = bg;
+      });
+    };
     if (theme !== "system") {
       root.dataset.theme = theme;
+      syncThemeColor();
       return;
     }
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
       root.dataset.theme = mq.matches ? "dark" : "light";
+      syncThemeColor();
     };
     apply();
     mq.addEventListener("change", apply);

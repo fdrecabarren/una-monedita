@@ -82,7 +82,7 @@ function MobileLayout() {
       <main style={{ flex: 1, minHeight: 0 }}>
         <ScreenBody screen={screen} />
       </main>
-      <nav aria-label="Secciones" className="mobile-nav" style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--surface)", flex: "0 0 auto", paddingBottom: "calc(4px + env(safe-area-inset-bottom))" }}>
+      <nav aria-label="Secciones" className="mobile-nav" style={{ display: "flex", borderTop: "1px solid var(--line)", background: "var(--surface)", flex: "0 0 auto" }}>
         {NAV_MOBILE.map((n) => {
           const on = activeTab === n.id;
           return (
@@ -102,6 +102,8 @@ function MobileLayout() {
           );
         })}
       </nav>
+      {/* Le pasa a Safari 26 el color de la nav para la franja de su barra (ver .chin-tint en globals.css). */}
+      <div aria-hidden="true" className="chin-tint" />
     </div>
   );
 }
@@ -211,7 +213,7 @@ export function Shell() {
   // El tema y el acento viven en <html> (ver app/layout.tsx y el store).
   return (
     <div
-      className={"app-root " + (isDesktop ? "desktop" : "mobile")}
+      className={"app-root app-shell " + (isDesktop ? "desktop" : "mobile")}
       style={{ height: "100dvh", width: "100%", overflow: "hidden", position: "relative", display: "flex", flexDirection: "column" }}
     >
       <div style={{ flex: 1, minHeight: 0 }}>{isDesktop ? <DesktopLayout /> : <MobileLayout />}</div>
